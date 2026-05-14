@@ -93,7 +93,7 @@ const defaultSettings: AppSettings = {
     }
   },
   calendar: {
-    googleClientId: "229934488662-944kllgv751r4082cl5i4vu8np0tmsch.apps.googleusercontent.com",
+    googleClientId: "651189547797-31r9heos9mlpuov1rf47ika0s8no4d8n.apps.googleusercontent.com",
     calendarId: "primary",
     connectedEmail: "",
     googleSyncToken: "",

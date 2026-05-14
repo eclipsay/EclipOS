@@ -2002,11 +2002,26 @@ function SettingsView({ data, setData }: { data: AppData; setData: (data: AppDat
   }
   async function connectGoogle() {
     try {
+      await saveCalendarSettings();
       setGoogleCalendar(await window.assistant.googleCalendar.connect());
       setData(await window.assistant.data.get());
       setNotice("Google Calendar connected.");
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
+    }
+  }
+  async function saveCalendarSettings() {
+    try {
+      const next = await window.assistant.settings.save(settings, apiKey || undefined);
+      setData(next);
+      setSettings(next.settings);
+      setGoogleCalendar(await window.assistant.googleCalendar.status());
+      setNotice("Calendar settings saved.");
+      return next;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setNotice(message);
+      throw new Error(message);
     }
   }
   async function disconnectGoogle() {
@@ -2020,6 +2035,7 @@ function SettingsView({ data, setData }: { data: AppData; setData: (data: AppDat
   }
   async function syncGoogle() {
     try {
+      await saveCalendarSettings();
       setData(await window.assistant.googleCalendar.sync());
       setGoogleCalendar(await window.assistant.googleCalendar.status());
       setNotice("Google Calendar sync finished.");
@@ -2053,7 +2069,7 @@ function SettingsView({ data, setData }: { data: AppData; setData: (data: AppDat
           <label>Default event length (minutes)<input type="number" min="15" step="15" value={settings.calendar.defaultDurationMinutes} onChange={(e) => setSettings({ ...settings, calendar: { ...settings.calendar, defaultDurationMinutes: Number(e.target.value) } })} /></label>
           <Row title="Last sync" meta={googleCalendar?.lastSyncAt ? `${new Date(googleCalendar.lastSyncAt).toLocaleString()}${googleCalendar.lastSyncError ? ` - ${googleCalendar.lastSyncError}` : ""}` : "Never"} />
           <div className="quick-actions">
-            <button onClick={save}><Save size={16} /> Save calendar settings</button>
+            <button onClick={saveCalendarSettings}><Save size={16} /> Save calendar settings</button>
             <button onClick={connectGoogle}><CalendarDays size={16} /> Connect</button>
             <button onClick={syncGoogle}><RotateCcw size={16} /> Sync now</button>
             <button className="danger" onClick={disconnectGoogle}><Trash2 size={16} /> Disconnect</button>
