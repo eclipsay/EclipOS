@@ -250,7 +250,7 @@ function friendlyDiscordError(error) {
 const commands = [
   new SlashCommandBuilder()
     .setName("remind")
-    .setDescription("Manage NahkriinOS reminders")
+        .setDescription("Manage EclipOS reminders")
     .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
     .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel)
     .addSubcommand((sub) => sub
@@ -274,7 +274,7 @@ async function registerCommands() {
 }
 
 client.once(Events.ClientReady, async () => {
-  console.log(`NahkriinOS reminder bot online as ${client.user.tag}`);
+  console.log(`EclipOS reminder bot online as ${client.user.tag}`);
   await registerCommands();
   await processDueReminders();
   setInterval(() => processDueReminders().catch((error) => console.error("Due reminder check failed", error)), 30_000);
@@ -283,7 +283,7 @@ client.once(Events.ClientReady, async () => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand() || interaction.commandName !== "remind") return;
   if (interaction.user.id !== targetUserId) {
-    await interaction.reply({ content: "This NahkriinOS reminder bot is private.", ephemeral: true });
+      await interaction.reply({ content: "This EclipOS reminder bot is private.", ephemeral: true });
     return;
   }
   const sub = interaction.options.getSubcommand();
@@ -315,7 +315,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       markReminder(id, { dueAt: parseDue(interaction.options.getString("due", true)), completed: 0, dismissed: 0, discordNotificationStatus: "pending", discordNotificationSentAt: null, discordNotificationError: null });
       await interaction.reply({ content: "Reminder snoozed.", ephemeral: true });
     } else if (sub === "testdm") {
-      await sendDm("✅ **NahkriinOS VPS reminders are connected.**");
+      await sendDm("✅ **EclipOS VPS reminders are connected.**");
       await interaction.reply({ content: "Test DM sent.", ephemeral: true });
     }
   } catch (error) {
@@ -369,7 +369,7 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (url.pathname === "/api/testdm" && request.method === "POST") {
-      await sendDm("✅ **NahkriinOS VPS reminders are connected.**");
+      await sendDm("✅ **EclipOS VPS reminders are connected.**");
       writeJson(response, 200, { ok: true });
       return;
     }
@@ -418,7 +418,7 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(apiPort, apiHost, () => {
-  console.log(`NahkriinOS reminder API listening on http://${apiHost}:${apiPort}`);
+  console.log(`EclipOS reminder API listening on http://${apiHost}:${apiPort}`);
   console.log(`Reminder timezone: ${reminderTimeZone}`);
 });
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/home/ubuntu/nahkriinos-bot}"
+APP_DIR="${APP_DIR:-/home/ubuntu/eclipos-bot}"
 BOT_DIR="$APP_DIR/bot"
-PM2_NAME="${PM2_NAME:-nahkriinos-reminder-bot}"
+PM2_NAME="${PM2_NAME:-eclipos-reminder-bot}"
 
 cd "$APP_DIR"
 git pull --ff-only
@@ -16,6 +16,6 @@ if command -v pm2 >/dev/null 2>&1; then
   pm2 save
   pm2 status "$PM2_NAME"
 else
-  sudo systemctl restart nahkriinos-reminder-bot
-  sudo systemctl status nahkriinos-reminder-bot --no-pager
+sudo systemctl restart eclipos-reminder-bot
+sudo systemctl status eclipos-reminder-bot --no-pager
 fi

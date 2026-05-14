@@ -1,0 +1,85 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+  background: #081019;
+  color: #e8eef5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  min-width: 100%;
+}
+
+body {
+  background:
+    radial-gradient(circle at top, rgba(45, 212, 191, 0.16), transparent 36%),
+    linear-gradient(180deg, #071019 0%, #0c1622 100%);
+  color: #e8eef5;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+.page,
+.settings,
+.panel,
+.card,
+.editor-grid,
+.shell,
+.app-shell,
+.content,
+.sidebar,
+.nav,
+.overlay-root,
+.perf-overlay {
+  box-sizing: border-box;
+}
+
+.perf-overlay {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(4, 10, 16, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+.overlay-separator {
+  opacity: 0.45;
+  padding: 0 6px;
+}
+
+.overlay-metric.warn {
+  color: #ff9a7a;
+}
+
+main,
+section,
+article,
+aside,
+header,
+footer,
+nav,
+div {
+  max-width: 100%;
+}

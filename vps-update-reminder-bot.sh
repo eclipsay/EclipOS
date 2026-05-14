@@ -5,12 +5,12 @@ import path from "node:path";
 const root = process.cwd();
 const packageJson = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
 const version = packageJson.version;
-const appName = "NahkriinOS";
+const appName = "EclipOS";
 const releaseDir = path.join(root, "release");
 const publicDir = path.join(releaseDir, "public");
 const versionDir = path.join(publicDir, "releases", version);
 const latestDir = path.join(publicDir, "releases", "latest");
-const baseUrl = (process.env.NAHKRIINOS_DOWNLOAD_BASE_URL || "https://downloads.example.com").replace(/\/$/, "");
+const baseUrl = (process.env.ECLIPOS_DOWNLOAD_BASE_URL || "https://downloads.example.com").replace(/\/$/, "");
 
 async function fileExists(filePath) {
   try {
@@ -59,27 +59,27 @@ function formatBytes(value) {
 }
 
 async function releaseNotes() {
-  if (process.env.NAHKRIINOS_RELEASE_NOTES) return process.env.NAHKRIINOS_RELEASE_NOTES;
+  if (process.env.ECLIPOS_RELEASE_NOTES) return process.env.ECLIPOS_RELEASE_NOTES;
   const changelog = path.join(root, "CHANGELOG.md");
   if (await fileExists(changelog)) {
     const raw = await fs.readFile(changelog, "utf8");
     return raw.split(/^##\s+/m)[1]?.trim() || raw.trim();
   }
-  return "Latest NahkriinOS Windows release.";
+  return "Latest EclipOS Windows release.";
 }
 
-const setupSource = await findArtifact("NahkriinOS-Setup");
-const portableSource = await findArtifact("NahkriinOS-Portable");
+const setupSource = await findArtifact("EclipOS-Setup");
+const portableSource = await findArtifact("EclipOS-Portable");
 const notes = await releaseNotes();
 const publishedAt = new Date().toISOString();
 
 await fs.mkdir(versionDir, { recursive: true });
 await fs.mkdir(latestDir, { recursive: true });
 
-const setupVersionedName = `NahkriinOS-Setup-${version}-x64.exe`;
-const portableVersionedName = `NahkriinOS-Portable-${version}-x64.exe`;
-const setupLatestName = "NahkriinOS-Setup.exe";
-const portableLatestName = "NahkriinOS-Portable.exe";
+const setupVersionedName = `EclipOS-Setup-${version}-x64.exe`;
+const portableVersionedName = `EclipOS-Portable-${version}-x64.exe`;
+const setupLatestName = "EclipOS-Setup.exe";
+const portableLatestName = "EclipOS-Portable.exe";
 
 await fs.copyFile(setupSource, path.join(versionDir, setupVersionedName));
 await fs.copyFile(portableSource, path.join(versionDir, portableVersionedName));

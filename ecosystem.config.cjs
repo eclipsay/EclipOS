@@ -1,7 +1,7 @@
 DISCORD_BOT_TOKEN=
 DISCORD_TARGET_USER_ID=203025242753335296
 REMINDER_TIME_ZONE=America/New_York
-DATABASE_URL=file:/home/ubuntu/nahkriinos-bot/reminders.sqlite
+DATABASE_URL=file:/home/ubuntu/eclipos-bot/reminders.sqlite
 BOT_API_TOKEN=
 BOT_API_PORT=47822
 BOT_API_HOST=127.0.0.1

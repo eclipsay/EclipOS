@@ -1,7 +1,7 @@
 {
-  "name": "nahkriinos",
+  "name": "eclipos",
   "version": "1.0.0",
-  "description": "NahkriinOS personal productivity desktop companion",
+  "description": "EclipOS personal productivity desktop companion",
   "main": "dist-electron/main/main.js",
   "type": "module",
   "scripts": {
@@ -20,8 +20,8 @@
   "author": "",
   "license": "MIT",
   "build": {
-    "appId": "com.nahkriin.os",
-    "productName": "NahkriinOS",
+    "appId": "com.eclipsay.eclipos",
+    "productName": "EclipOS",
     "directories": {
       "output": "release"
     },
@@ -49,16 +49,16 @@
       ]
     },
     "nsis": {
-      "artifactName": "NahkriinOS-Setup-${version}-${arch}.${ext}",
+      "artifactName": "EclipOS-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "NahkriinOS"
+      "shortcutName": "EclipOS"
     },
     "portable": {
-      "artifactName": "NahkriinOS-Portable-${version}-${arch}.${ext}"
+      "artifactName": "EclipOS-Portable-${version}-${arch}.${ext}"
     }
   },
   "dependencies": {

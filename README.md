@@ -1,6 +1,6 @@
-# NahkriinOS
+# EclipOS
 
-NahkriinOS is a Windows desktop companion for productivity, reminders, PC utilities, entertainment tracking, Codex workflows, and system monitoring. This repository also includes the VPS-hosted Discord reminder bot that keeps reminders working even when the desktop PC is offline.
+EclipOS is a Windows desktop companion for productivity, reminders, PC utilities, entertainment tracking, Codex workflows, and system monitoring. This repository also includes the VPS-hosted Discord reminder bot that keeps reminders working even when the desktop PC is offline.
 
 ## Project Layout
 
@@ -49,7 +49,7 @@ Required bot `.env` values:
 DISCORD_BOT_TOKEN=
 DISCORD_TARGET_USER_ID=203025242753335296
 REMINDER_TIME_ZONE=America/New_York
-DATABASE_URL=file:/home/ubuntu/nahkriinos-bot/reminders.sqlite
+DATABASE_URL=file:/home/ubuntu/eclipos-bot/reminders.sqlite
 BOT_API_TOKEN=
 BOT_API_PORT=47822
 BOT_API_HOST=127.0.0.1
@@ -61,13 +61,13 @@ Do not commit `.env`. The Discord bot token belongs only on the VPS. The desktop
 
 ## Desktop Reminder Sync
 
-In NahkriinOS Settings, open **Discord Reminder Backend** and set:
+In EclipOS Settings, open **Discord Reminder Backend** and set:
 
 - Backend URL: `https://your-domain.example.com/reminders`
 - Backend API token: the same value as `BOT_API_TOKEN`
 - Target user ID: `203025242753335296`
 
-Reminders created in Discord sync into NahkriinOS. Reminders created in NahkriinOS sync to the VPS bot, which sends the Discord DM when due.
+Reminders created in Discord sync into EclipOS. Reminders created in EclipOS sync to the VPS bot, which sends the Discord DM when due.
 
 ## GitHub Setup
 
@@ -76,7 +76,7 @@ From `E:\Codex\Assistant`:
 ```powershell
 git init
 git add .
-git commit -m "Initial NahkriinOS and reminder bot setup"
+git commit -m "Initial EclipOS and reminder bot setup"
 git branch -M main
 git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
 git push -u origin main
@@ -100,8 +100,8 @@ sudo apt install -y nodejs
 sudo npm install -g pm2
 
 cd /home/ubuntu
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git nahkriinos-bot
-cd nahkriinos-bot/bot
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git eclipos-bot
+cd eclipos-bot/bot
 cp .env.example .env
 nano .env
 npm install --omit=dev
@@ -113,7 +113,7 @@ pm2 startup
 For future updates:
 
 ```bash
-cd /home/ubuntu/nahkriinos-bot
+cd /home/ubuntu/eclipos-bot
 git pull --ff-only
 cd bot
 npm install --omit=dev
@@ -124,7 +124,7 @@ pm2 save
 Or use:
 
 ```bash
-APP_DIR=/home/ubuntu/nahkriinos-bot bash scripts/vps-update-reminder-bot.sh
+APP_DIR=/home/ubuntu/eclipos-bot bash scripts/vps-update-reminder-bot.sh
 ```
 
 From your PC, after pushing commits:
@@ -132,7 +132,7 @@ From your PC, after pushing commits:
 ```powershell
 $env:VPS_HOST="15.204.119.230"
 $env:VPS_USER="ubuntu"
-$env:VPS_BOT_DIR="/home/ubuntu/nahkriinos-bot"
+$env:VPS_BOT_DIR="/home/ubuntu/eclipos-bot"
 npm run deploy:bot:vps
 ```
 

@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "nahkriinos-reminder-bot",
+      name: "eclipos-reminder-bot",
       script: "index.mjs",
       cwd: __dirname,
       instances: 1,
