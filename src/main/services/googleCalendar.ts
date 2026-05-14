@@ -66,6 +66,7 @@ async function googleFetch<T>(accessToken: string, url: string, init?: RequestIn
 
 async function getAccessToken(store: JsonStore) {
   const refreshToken = await store.getGoogleCalendarRefreshToken();
+  const clientSecret = await store.getGoogleCalendarClientSecret();
   const data = await store.read();
   const clientId = data.settings.calendar?.googleClientId?.trim();
   if (!clientId || !refreshToken) throw new Error("Google Calendar is not connected.");
@@ -74,6 +75,7 @@ async function getAccessToken(store: JsonStore) {
     grant_type: "refresh_token",
     refresh_token: refreshToken
   });
+  if (clientSecret) body.set("client_secret", clientSecret);
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -98,6 +100,7 @@ export async function googleCalendarStatus(store: JsonStore) {
   const data = await store.read();
   return {
     connected: await store.hasGoogleCalendarRefreshToken(),
+    hasClientSecret: await store.hasGoogleCalendarClientSecret(),
     secureStorage: store.isSecureStorageAvailable(),
     clientId: data.settings.calendar?.googleClientId || "",
     connectedEmail: data.settings.calendar?.connectedEmail || "",
@@ -111,6 +114,7 @@ export async function googleCalendarStatus(store: JsonStore) {
 export async function connectGoogleCalendar(store: JsonStore) {
   const data = await store.read();
   const clientId = data.settings.calendar?.googleClientId?.trim();
+  const clientSecret = await store.getGoogleCalendarClientSecret();
   if (!clientId) throw new Error("Add a Google OAuth Client ID in Settings first.");
 
   const verifier = base64Url(randomBytes(48));
@@ -160,6 +164,7 @@ export async function connectGoogleCalendar(store: JsonStore) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: clientId,
+      ...(clientSecret ? { client_secret: clientSecret } : {}),
       code: result.code,
       code_verifier: verifier,
       grant_type: "authorization_code",

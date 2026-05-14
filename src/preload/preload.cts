@@ -121,6 +121,7 @@ const api = {
   },
   googleCalendar: {
     status: (): Promise<any> => ipcRenderer.invoke("googleCalendar:status"),
+    saveSecret: (secret: string): Promise<any> => ipcRenderer.invoke("googleCalendar:saveSecret", secret),
     connect: (): Promise<any> => ipcRenderer.invoke("googleCalendar:connect"),
     disconnect: (): Promise<any> => ipcRenderer.invoke("googleCalendar:disconnect"),
     sync: (): Promise<AppData> => ipcRenderer.invoke("googleCalendar:sync")

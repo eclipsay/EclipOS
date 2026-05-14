@@ -746,6 +746,10 @@ function wireIpc() {
   ipcMain.handle("discord:testDm", (_event, token?: string) => testDiscordDm(store, token));
   ipcMain.handle("discord:sync", () => syncRemindersAndNotifyRenderer());
   ipcMain.handle("googleCalendar:status", () => googleCalendarStatus(store));
+  ipcMain.handle("googleCalendar:saveSecret", async (_event, secret: string) => {
+    await store.saveGoogleCalendarClientSecret(secret);
+    return googleCalendarStatus(store);
+  });
   ipcMain.handle("googleCalendar:connect", async () => connectGoogleCalendar(store));
   ipcMain.handle("googleCalendar:disconnect", async () => disconnectGoogleCalendar(store));
   ipcMain.handle("googleCalendar:sync", async () => syncGoogleCalendar(store));

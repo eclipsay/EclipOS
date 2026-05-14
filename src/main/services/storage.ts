@@ -220,6 +220,7 @@ export class JsonStore {
   private openAiKeyPath = path.join(app.getPath("userData"), "openai-api-key.bin");
   private discordBackendTokenPath = path.join(app.getPath("userData"), "discord-reminder-backend-token.bin");
   private googleCalendarRefreshTokenPath = path.join(app.getPath("userData"), "google-calendar-refresh-token.bin");
+  private googleCalendarClientSecretPath = path.join(app.getPath("userData"), "google-calendar-client-secret.bin");
   private data: AppData | null = null;
 
   async read(): Promise<AppData> {
@@ -415,6 +416,41 @@ export class JsonStore {
 
   async clearGoogleCalendarRefreshToken(): Promise<void> {
     await fs.rm(this.googleCalendarRefreshTokenPath, { force: true });
+  }
+
+  async hasGoogleCalendarClientSecret(): Promise<boolean> {
+    return (await this.getGoogleCalendarClientSecret()).length > 0;
+  }
+
+  async saveGoogleCalendarClientSecret(secret: string): Promise<void> {
+    const trimmed = secret.trim();
+    if (!trimmed) {
+      await fs.rm(this.googleCalendarClientSecretPath, { force: true });
+      return;
+    }
+    await fs.mkdir(path.dirname(this.googleCalendarClientSecretPath), { recursive: true });
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(trimmed);
+      await fs.writeFile(this.googleCalendarClientSecretPath, JSON.stringify({ encrypted: true, value: encrypted.toString("base64") }), "utf8");
+      return;
+    }
+    await fs.writeFile(this.googleCalendarClientSecretPath, JSON.stringify({ encrypted: false, value: Buffer.from(trimmed, "utf8").toString("base64") }), "utf8");
+  }
+
+  async getGoogleCalendarClientSecret(): Promise<string> {
+    try {
+      const raw = await fs.readFile(this.googleCalendarClientSecretPath, "utf8");
+      const payload = JSON.parse(raw) as { encrypted: boolean; value: string };
+      const bytes = Buffer.from(payload.value, "base64");
+      if (payload.encrypted) return safeStorage.decryptString(bytes);
+      return bytes.toString("utf8");
+    } catch {
+      return "";
+    }
+  }
+
+  async clearGoogleCalendarClientSecret(): Promise<void> {
+    await fs.rm(this.googleCalendarClientSecretPath, { force: true });
   }
 
   private async readLegacyReminders(): Promise<AppData["reminders"]> {

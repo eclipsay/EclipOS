@@ -1955,6 +1955,7 @@ function SettingsView({ data, setData }: { data: AppData; setData: (data: AppDat
   const [settings, setSettings] = useState<AppSettings>(data.settings);
   const [apiKey, setApiKey] = useState("");
   const [discordBackendToken, setDiscordBackendToken] = useState("");
+  const [googleClientSecret, setGoogleClientSecret] = useState("");
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [discord, setDiscord] = useState<DiscordStatus | null>(null);
   const [googleCalendar, setGoogleCalendar] = useState<any>(null);
@@ -2013,6 +2014,10 @@ function SettingsView({ data, setData }: { data: AppData; setData: (data: AppDat
   async function saveCalendarSettings() {
     try {
       const next = await window.assistant.settings.save(settings, apiKey || undefined);
+      if (googleClientSecret.trim()) {
+        setGoogleCalendar(await window.assistant.googleCalendar.saveSecret(googleClientSecret));
+        setGoogleClientSecret("");
+      }
       setData(next);
       setSettings(next.settings);
       setGoogleCalendar(await window.assistant.googleCalendar.status());
@@ -2065,6 +2070,7 @@ function SettingsView({ data, setData }: { data: AppData; setData: (data: AppDat
         <div className="form">
           <Row title={googleCalendar?.connected ? "Google Calendar connected" : "Google Calendar disconnected"} meta={googleCalendar?.connectedEmail || "Not connected yet"} />
           <input value={settings.calendar.googleClientId} onChange={(e) => setSettings({ ...settings, calendar: { ...settings.calendar, googleClientId: e.target.value } })} placeholder="Google Desktop App Client ID" />
+          <input type="password" value={googleClientSecret} onChange={(e) => setGoogleClientSecret(e.target.value)} placeholder={googleCalendar?.hasClientSecret ? "Google Client Secret saved securely - paste to replace" : "Google Client Secret"} />
           <label><input type="checkbox" checked={settings.calendar.syncEnabled} onChange={(e) => setSettings({ ...settings, calendar: { ...settings.calendar, syncEnabled: e.target.checked } })} /> Enable sync</label>
           <label>Default event length (minutes)<input type="number" min="15" step="15" value={settings.calendar.defaultDurationMinutes} onChange={(e) => setSettings({ ...settings, calendar: { ...settings.calendar, defaultDurationMinutes: Number(e.target.value) } })} /></label>
           <Row title="Last sync" meta={googleCalendar?.lastSyncAt ? `${new Date(googleCalendar.lastSyncAt).toLocaleString()}${googleCalendar.lastSyncError ? ` - ${googleCalendar.lastSyncError}` : ""}` : "Never"} />
