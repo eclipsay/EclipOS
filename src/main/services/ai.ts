@@ -2,7 +2,7 @@ import type { WebContents } from "electron";
 import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AiChatMessage, AiChatRequest, AiContextPreview, AiStatus, AiStorageRecommendation, AppData, ProcessInfo, StorageScanItem, StorageScanResult, SystemSnapshot } from "../../shared/types.js";
+import type { AiChatMessage, AiChatRequest, AiContextPreview, AiStatus, AiStorageRecommendation, AppData, ProcessInfo, ReminderItem, StorageScanItem, StorageScanResult, SystemSnapshot } from "../../shared/types.js";
 import { entertainmentSnapshot } from "./entertainment.js";
 import { JsonStore } from "./storage.js";
 import { getSystemSnapshot, storageScanStatus } from "./system.js";
@@ -11,6 +11,16 @@ const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const activeRequests = new Map<string, AbortController>();
 
 const now = () => new Date().toISOString();
+const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+type ReminderToolResult =
+  | { kind: "none" }
+  | { kind: "clarify"; question: string }
+  | { kind: "created"; reminder: ReminderItem };
+
+type AiActions = {
+  createReminder?: (draft: Partial<ReminderItem>) => Promise<ReminderItem>;
+};
 
 function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -138,6 +148,93 @@ function average(values: number[]) {
   return clean.length ? clean.reduce((sum, value) => sum + value, 0) / clean.length : 0;
 }
 
+async function parseReminderIntent(apiKey: string, model: string, message: string): Promise<{
+  shouldCreate: boolean;
+  title?: string;
+  notes?: string;
+  dueAt?: string;
+  needsClarification?: string;
+}> {
+  const response = await callResponsesApi(apiKey, {
+    model,
+    max_output_tokens: 250,
+    input: [
+      "You extract reminder creation intents for EclipOS.",
+      `Current local time: ${new Date().toISOString()}`,
+      `Current time zone: ${localTimeZone}`,
+      "Return only compact JSON with this exact shape:",
+      '{"shouldCreate":boolean,"title":"string","notes":"string","dueAt":"ISO-8601 string","needsClarification":"string"}',
+      "Set shouldCreate=true only when the user is clearly asking to create a reminder or be reminded.",
+      "If the request is ambiguous or missing a usable due time, set shouldCreate=false and fill needsClarification with one short question.",
+      "Convert relative times like tomorrow, in 2 hours, tonight, this evening, next monday, at 5pm into ISO-8601.",
+      "Keep title short and natural. Put extra details into notes.",
+      "",
+      `User message: ${message}`
+    ].join("\n")
+  });
+
+  if (!response.ok) {
+    return { shouldCreate: false };
+  }
+
+  const json = await response.json() as any;
+  const text = String(
+    json.output_text ??
+    json.output?.flatMap((item: any) => item.content ?? []).map((item: any) => item.text ?? "").join("\n") ??
+    ""
+  ).trim();
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return { shouldCreate: false };
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return { shouldCreate: false };
+  }
+}
+
+async function maybeCreateReminderFromRequest(store: JsonStore, apiKey: string, message: string, actions?: AiActions): Promise<ReminderToolResult> {
+  if (!actions?.createReminder) return { kind: "none" };
+  const data = await store.read();
+  const parsed = await parseReminderIntent(apiKey, data.settings.ai.model, message);
+  if (!parsed.shouldCreate) {
+    if (parsed.needsClarification?.trim()) return { kind: "clarify", question: parsed.needsClarification.trim() };
+    return { kind: "none" };
+  }
+  const title = String(parsed.title || "").trim();
+  const dueAt = String(parsed.dueAt || "").trim();
+  if (!title || !dueAt) {
+    return { kind: "clarify", question: parsed.needsClarification?.trim() || "What should I remind you about, and when should I schedule it?" };
+  }
+  const dueDate = new Date(dueAt);
+  if (!Number.isFinite(dueDate.getTime())) {
+    return { kind: "clarify", question: "I could not understand the reminder time. What exact date or time should I use?" };
+  }
+  const reminder = await actions.createReminder({
+    id: crypto.randomUUID(),
+    title,
+    text: title,
+    notes: String(parsed.notes || "").trim(),
+    dueAt: dueDate.toISOString(),
+    completed: false,
+    dismissed: false,
+    notified: false,
+    discordNotificationStatus: "pending",
+    createdAt: now(),
+    updatedAt: now()
+  });
+  return { kind: "created", reminder };
+}
+
+async function appendConversation(store: JsonStore, userMessage: AiChatMessage, assistantMessage: AiChatMessage) {
+  await store.patch((draft) => ({
+    ...draft,
+    aiConversation: {
+      messages: [...draft.aiConversation.messages, userMessage, assistantMessage].slice(-80),
+      updatedAt: now()
+    }
+  }));
+}
+
 async function buildContext(store: JsonStore): Promise<AiContextPreview> {
   const data = await store.read();
   const [snapshot, scanStatus, entertainment] = await Promise.all([
@@ -176,16 +273,16 @@ async function buildContext(store: JsonStore): Promise<AiContextPreview> {
     `RAM: ${Math.round((snapshot.ram.used / Math.max(snapshot.ram.total, 1)) * 100)}% used`,
     scan ? `Storage scan: ${formatBytes(scan.scannedBytes)} scanned` : "Storage scan: not available",
     entertainment?.active ? `Immersive mode: ${entertainment.profile}` : "Immersive mode: inactive"
-  ].join(" • ");
+  ].join(" Â· ");
   return { summary, categories, redactions, payload };
 }
 
 function systemPrompt(mode: "simple" | "advanced") {
   return [
-    "You are the AI PC Assistant inside EclipOS, a consumer-friendly Windows productivity and diagnostics app.",
-    "Use the local system context provided by EclipOS. Explain in plain English first.",
-    "If data is missing or privacy settings excluded it, say what is missing and suggest running diagnostics or enabling that data category.",
-    "Never claim you deleted files, killed processes, disabled startup apps, edited registry keys, or changed system settings.",
+    "You are the AI Assistant inside EclipOS.",
+    "You can help with general questions, planning, writing, explanations, and day-to-day tasks, not just PC diagnostics.",
+    "Use the local EclipOS system context when it is relevant to the user's request. Do not force system details into unrelated answers. If the user is asking about their PC, diagnostics, storage, processes, reminders, or local activity, use the local context provided by EclipOS and explain in plain English first. If data is missing or privacy settings excluded it for a system-related question, say what is missing and suggest running diagnostics or enabling that data category.",
+    "Never claim you deleted files, killed processes, disabled startup apps, edited registry keys, or changed system settings. When a user asks for a reminder and the request is clear, create it. If the time is unclear, ask one concise follow-up question.",
     "Never recommend deleting Windows-critical folders, Program Files, driver stores, recovery/EFI/system boot files, pagefile/hiberfil/swapfile, or Windows servicing files.",
     "For storage cleanup, focus on user-managed folders, downloads, old installers, archives, cache/temp data, logs, media, duplicate candidates, and stale projects.",
     "For entertainment questions, use local play/watch history and immersive-mode state when available. Be honest when metadata such as genres, posters, or completion status is missing.",
@@ -262,10 +359,10 @@ export async function testOpenAiKey(store: JsonStore, keyOverride?: string) {
   return true;
 }
 
-export async function sendAiMessage(store: JsonStore, request: AiChatRequest, webContents: WebContents) {
+export async function sendAiMessage(store: JsonStore, request: AiChatRequest, webContents: WebContents, actions?: AiActions) {
   const data = await store.read();
   const apiKey = await store.getOpenAiApiKey();
-  if (!apiKey) throw new Error("OpenAI is not configured. Add an API key in Settings before using the AI PC Assistant.");
+  if (!apiKey) throw new Error("OpenAI is not configured. Add an API key in Settings before using the assistant.");
 
   const requestId = crypto.randomUUID();
   const controller = new AbortController();
@@ -280,6 +377,39 @@ export async function sendAiMessage(store: JsonStore, request: AiChatRequest, we
   };
 
   try {
+    const reminderResult = await maybeCreateReminderFromRequest(store, apiKey, request.message, actions);
+    if (reminderResult.kind === "clarify") {
+      const assistantMessage: AiChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: reminderResult.question,
+        createdAt: now(),
+        sources: ["Reminder assistant"]
+      };
+      await appendConversation(store, userMessage, assistantMessage);
+      webContents.send("ai:stream", { kind: "done", requestId, message: assistantMessage });
+      return { requestId };
+    }
+    if (reminderResult.kind === "created") {
+      const due = new Date(reminderResult.reminder.dueAt);
+      const assistantMessage: AiChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: [
+          `## Reminder created`,
+          `**Title:** ${reminderResult.reminder.title || reminderResult.reminder.text}`,
+          `**Due:** ${Number.isFinite(due.getTime()) ? due.toLocaleString() : reminderResult.reminder.dueAt}`,
+          reminderResult.reminder.notes ? `**Notes:** ${reminderResult.reminder.notes}` : "",
+          "It will follow your normal local notification and Discord reminder flow."
+        ].filter(Boolean).join("\n"),
+        createdAt: now(),
+        sources: ["Reminder assistant", "Reminders"]
+      };
+      await appendConversation(store, userMessage, assistantMessage);
+      webContents.send("ai:stream", { kind: "done", requestId, message: assistantMessage });
+      return { requestId };
+    }
+
     const context = await buildContext(store);
     webContents.send("ai:stream", { kind: "sources", requestId, sources: context.categories });
     const history = data.aiConversation.messages.slice(-10).map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
@@ -340,22 +470,13 @@ export async function sendAiMessage(store: JsonStore, request: AiChatRequest, we
       createdAt: now(),
       sources: context.categories
     };
-    await store.patch((draft) => ({
-      ...draft,
-      aiConversation: {
-        messages: [...draft.aiConversation.messages, userMessage, assistantMessage].slice(-80),
-        updatedAt: now()
-      }
-    }));
+    await appendConversation(store, userMessage, assistantMessage);
     webContents.send("ai:stream", { kind: "done", requestId, message: assistantMessage });
     return { requestId };
   } catch (error) {
     const message = error instanceof Error && error.name === "AbortError" ? "The AI response was cancelled." : error instanceof Error ? error.message : String(error);
     const assistantMessage: AiChatMessage = { id: crypto.randomUUID(), role: "assistant", content: message, createdAt: now(), error: message };
-    await store.patch((draft) => ({
-      ...draft,
-      aiConversation: { messages: [...draft.aiConversation.messages, userMessage, assistantMessage].slice(-80), updatedAt: now() }
-    }));
+    await appendConversation(store, userMessage, assistantMessage);
     webContents.send("ai:stream", { kind: "error", requestId, error: message, message: assistantMessage });
     throw error;
   } finally {

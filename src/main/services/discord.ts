@@ -1,7 +1,7 @@
 import type { AppData, DiscordStatus, ReminderItem } from "../../shared/types.js";
 import type { JsonStore } from "./storage.js";
 
-export const DISCORD_REMINDER_USER_ID = "203025242753335296";
+export const DISCORD_REMINDER_USER_ID = "140478632165507073";
 
 type ReminderPatch = Partial<Pick<ReminderItem,
   "title" | "text" | "notes" | "dueAt" | "priority" | "category" | "completed" | "dismissed" | "discordNotificationStatus"

@@ -716,7 +716,16 @@ function wireIpc() {
   });
   ipcMain.handle("ai:testKey", (_event, apiKey?: string) => testOpenAiKey(store, apiKey));
   ipcMain.handle("ai:previewContext", () => previewAiContext(store));
-  ipcMain.handle("ai:send", (event, request: AiChatRequest) => sendAiMessage(store, request, event.sender));
+  ipcMain.handle("ai:send", (event, request: AiChatRequest) => sendAiMessage(store, request, event.sender, {
+    createReminder: async (draft) => {
+      const normalized = normalizeReminder(draft as ReminderItem);
+      const next = await store.patch((data) => ({ ...data, reminders: upsertById(data.reminders, normalized) }));
+      scheduleReminder(normalized);
+      await tryReminderBackendSync(() => pushReminderToBackend(store, normalized));
+      mainWindow?.webContents.send("reminders:updated", next);
+      return normalized;
+    }
+  }));
   ipcMain.handle("ai:cancel", (_event, requestId: string) => cancelAiRequest(requestId));
   ipcMain.handle("ai:clearChat", () => clearAiConversation(store));
   ipcMain.handle("ai:exportChat", () => exportAiConversation(store));

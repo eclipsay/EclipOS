@@ -47,7 +47,7 @@ Required bot `.env` values:
 
 ```bash
 DISCORD_BOT_TOKEN=
-DISCORD_TARGET_USER_ID=203025242753335296
+DISCORD_TARGET_USER_ID=140478632165507073
 REMINDER_TIME_ZONE=America/New_York
 DATABASE_URL=file:/home/ubuntu/eclipos-bot/reminders.sqlite
 BOT_API_TOKEN=
@@ -65,7 +65,7 @@ In EclipOS Settings, open **Discord Reminder Backend** and set:
 
 - Backend URL: `https://your-domain.example.com/reminders`
 - Backend API token: the same value as `BOT_API_TOKEN`
-- Target user ID: `203025242753335296`
+- Target user ID: `140478632165507073`
 
 Reminders created in Discord sync into EclipOS. Reminders created in EclipOS sync to the VPS bot, which sends the Discord DM when due.
 
@@ -145,7 +145,7 @@ npm run deploy:bot:vps
 - `/remind snooze`
 - `/remind testdm`
 
-Commands are registered globally and are available in servers, bot DMs, and private/user-install contexts when the Discord application is installed with the right scopes. Commands are still restricted to Discord user ID `203025242753335296`.
+Commands are registered globally and are available in servers, bot DMs, and private/user-install contexts when the Discord application is installed with the right scopes. Commands are still restricted to Discord user ID `140478632165507073`.
 
 If commands do not appear in DMs, open the Discord Developer Portal for the bot application and make sure the app supports user installation. Then install/reinvite with the `applications.commands` scope, plus `bot` for server installs.
 

@@ -69,7 +69,7 @@ const defaultSettings: AppSettings = {
   ai: defaultAiSettings,
   discord: {
     enabled: true,
-    targetUserId: "203025242753335296",
+    targetUserId: "140478632165507073",
     backendUrl: process.env.ECLIPOS_REMINDER_BACKEND_URL || "",
     syncEnabled: true
   },
