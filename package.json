@@ -1,0 +1,87 @@
+{
+  "name": "nahkriinos",
+  "version": "1.0.0",
+  "description": "NahkriinOS personal productivity desktop companion",
+  "main": "dist-electron/main/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"wait-on tcp:5173 dist-electron/main/main.js && set VITE_DEV_SERVER_URL=http://127.0.0.1:5173&& electron .\"",
+    "build": "tsc -p tsconfig.electron.json && vite build",
+    "dist:win": "node scripts/prepare-win-build.mjs && npm.cmd run build && electron-builder --win nsis portable",
+    "build:win": "npm.cmd run dist:win",
+    "release": "npm.cmd run dist:win && node scripts/prepare-release.mjs",
+    "deploy:vps": "node scripts/deploy-vps.mjs",
+    "deploy:bot:vps": "node scripts/deploy-bot-vps.mjs",
+    "test": "npm.cmd run typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
+    "start": "npm run build && electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "build": {
+    "appId": "com.nahkriin.os",
+    "productName": "NahkriinOS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist-renderer/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "NahkriinOS-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NahkriinOS"
+    },
+    "portable": {
+      "artifactName": "NahkriinOS-Portable-${version}-${arch}.${ext}"
+    }
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "highlight.js": "^11.11.1",
+    "lucide-react": "^1.14.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12",
+    "wait-on": "^9.0.10"
+  }
+}

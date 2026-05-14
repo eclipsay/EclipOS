@@ -1,0 +1,425 @@
+import "dotenv/config";
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import Database from "better-sqlite3";
+import * as chrono from "chrono-node";
+import {
+  ApplicationIntegrationType,
+  Client,
+  Events,
+  GatewayIntentBits,
+  InteractionContextType,
+  REST,
+  Routes,
+  SlashCommandBuilder
+} from "discord.js";
+
+const token = process.env.DISCORD_BOT_TOKEN?.trim();
+const targetUserId = process.env.DISCORD_TARGET_USER_ID?.trim() || "203025242753335296";
+const apiToken = process.env.BOT_API_TOKEN?.trim();
+const apiPort = Number(process.env.BOT_API_PORT || 47822);
+const apiHost = process.env.BOT_API_HOST || "127.0.0.1";
+const databaseUrl = process.env.DATABASE_URL || "file:./reminders.sqlite";
+const reminderTimeZone = process.env.REMINDER_TIME_ZONE?.trim() || "America/New_York";
+process.env.TZ = reminderTimeZone;
+
+if (!token) throw new Error("DISCORD_BOT_TOKEN is required.");
+if (!apiToken) console.warn("BOT_API_TOKEN is not set. The sync API will reject requests until it is configured.");
+
+function sqlitePath(url) {
+  if (url.startsWith("file:")) return url.slice("file:".length);
+  return url;
+}
+
+const dbPath = path.resolve(sqlitePath(databaseUrl));
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+const db = new Database(dbPath);
+db.pragma("journal_mode = WAL");
+db.exec(`
+CREATE TABLE IF NOT EXISTS reminders (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  dueAt TEXT NOT NULL,
+  priority TEXT,
+  category TEXT,
+  completed INTEGER NOT NULL DEFAULT 0,
+  dismissed INTEGER NOT NULL DEFAULT 0,
+  notified INTEGER NOT NULL DEFAULT 0,
+  notifiedAt TEXT,
+  dismissedAt TEXT,
+  discordNotificationStatus TEXT NOT NULL DEFAULT 'pending',
+  discordNotificationSentAt TEXT,
+  discordNotificationError TEXT,
+  source TEXT NOT NULL DEFAULT 'desktop',
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  deletedAt TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(dueAt, discordNotificationStatus, completed, dismissed, deletedAt);
+`);
+
+const upsertReminder = db.prepare(`
+INSERT INTO reminders (
+  id, title, notes, dueAt, priority, category, completed, dismissed, notified, notifiedAt, dismissedAt,
+  discordNotificationStatus, discordNotificationSentAt, discordNotificationError, source, createdAt, updatedAt, deletedAt
+) VALUES (
+  @id, @title, @notes, @dueAt, @priority, @category, @completed, @dismissed, @notified, @notifiedAt, @dismissedAt,
+  @discordNotificationStatus, @discordNotificationSentAt, @discordNotificationError, @source, @createdAt, @updatedAt, @deletedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+  title=excluded.title,
+  notes=excluded.notes,
+  dueAt=excluded.dueAt,
+  priority=excluded.priority,
+  category=excluded.category,
+  completed=excluded.completed,
+  dismissed=excluded.dismissed,
+  notified=excluded.notified,
+  notifiedAt=excluded.notifiedAt,
+  dismissedAt=excluded.dismissedAt,
+  discordNotificationStatus=excluded.discordNotificationStatus,
+  discordNotificationSentAt=excluded.discordNotificationSentAt,
+  discordNotificationError=excluded.discordNotificationError,
+  source=excluded.source,
+  updatedAt=excluded.updatedAt,
+  deletedAt=excluded.deletedAt
+`);
+
+const listActive = db.prepare("SELECT * FROM reminders WHERE deletedAt IS NULL ORDER BY dueAt ASC");
+const getReminder = db.prepare("SELECT * FROM reminders WHERE id = ? AND deletedAt IS NULL");
+const dueReminders = db.prepare(`
+SELECT * FROM reminders
+WHERE deletedAt IS NULL
+  AND completed = 0
+  AND dismissed = 0
+  AND datetime(dueAt) <= datetime(?)
+  AND discordNotificationStatus = 'pending'
+ORDER BY dueAt ASC
+LIMIT 20
+`);
+
+function now() {
+  return new Date().toISOString();
+}
+
+function normalizeReminder(input, source = "desktop") {
+  const title = String(input.title || input.text || "Reminder").trim() || "Reminder";
+  const status = input.discordNotificationStatus || (input.completed ? "completed" : input.dismissed ? "dismissed" : "pending");
+  return {
+    id: String(input.id || crypto.randomUUID()),
+    title,
+    notes: String(input.notes || "").trim(),
+    dueAt: new Date(input.dueAt).toISOString(),
+    priority: input.priority ? String(input.priority) : null,
+    category: input.category ? String(input.category) : null,
+    completed: input.completed ? 1 : 0,
+    dismissed: input.dismissed ? 1 : 0,
+    notified: input.notified ? 1 : 0,
+    notifiedAt: input.notifiedAt || null,
+    dismissedAt: input.dismissedAt || null,
+    discordNotificationStatus: status,
+    discordNotificationSentAt: input.discordNotificationSentAt || null,
+    discordNotificationError: input.discordNotificationError || null,
+    source,
+    createdAt: input.createdAt || now(),
+    updatedAt: input.updatedAt || now(),
+    deletedAt: input.deletedAt || null
+  };
+}
+
+function saveIncomingReminder(input, source = "desktop") {
+  const incoming = normalizeReminder(input, source);
+  const existing = getReminder.get(incoming.id);
+  if (existing) {
+    const incomingTime = new Date(incoming.updatedAt).getTime();
+    const existingTime = new Date(existing.updatedAt).getTime();
+    if (Number.isFinite(existingTime) && Number.isFinite(incomingTime) && existingTime > incomingTime) {
+      return existing;
+    }
+    if (existing.discordNotificationStatus === "sent" && incoming.discordNotificationStatus === "pending" && !incoming.completed && !incoming.dismissed) {
+      incoming.discordNotificationStatus = existing.discordNotificationStatus;
+      incoming.discordNotificationSentAt = existing.discordNotificationSentAt;
+      incoming.discordNotificationError = existing.discordNotificationError;
+    }
+  }
+  upsertReminder.run(incoming);
+  return getReminder.get(incoming.id);
+}
+
+function serializeReminder(row) {
+  return {
+    id: row.id,
+    text: row.title,
+    title: row.title,
+    notes: row.notes || "",
+    dueAt: row.dueAt,
+    priority: row.priority || undefined,
+    category: row.category || undefined,
+    completed: Boolean(row.completed),
+    dismissed: Boolean(row.dismissed),
+    notified: Boolean(row.notified),
+    notifiedAt: row.notifiedAt || undefined,
+    dismissedAt: row.dismissedAt || undefined,
+    discordNotificationStatus: row.discordNotificationStatus,
+    discordNotificationSentAt: row.discordNotificationSentAt || undefined,
+    discordNotificationError: row.discordNotificationError || undefined,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+function parseDue(text) {
+  const parsed = chrono.parseDate(text, new Date(), { forwardDate: true });
+  const due = parsed || new Date(text);
+  if (!Number.isFinite(due.getTime())) throw new Error(`I could not understand the due date: ${text}`);
+  return due.toISOString();
+}
+
+function formatDiscordDate(iso) {
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: reminderTimeZone,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short"
+  });
+}
+
+function formatReminderMessage(reminder) {
+  const lines = [
+    "⏰ **Reminder Due**",
+    `**Title:** ${reminder.title}`,
+    `**Due:** ${formatDiscordDate(reminder.dueAt)}`,
+    reminder.notes ? `**Notes:** ${reminder.notes}` : "",
+    reminder.priority ? `**Priority:** ${reminder.priority}` : "",
+    reminder.category ? `**Category:** ${reminder.category}` : "",
+    "",
+    "Status: Pending"
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+async function sendDm(content) {
+  const user = await client.users.fetch(targetUserId);
+  await user.send({ content });
+}
+
+function markReminder(id, fields) {
+  const existing = getReminder.get(id);
+  if (!existing) throw new Error("Reminder not found.");
+  upsertReminder.run({ ...existing, ...fields, updatedAt: now() });
+}
+
+async function processDueReminders() {
+  if (!client.isReady()) return;
+  const rows = dueReminders.all(now());
+  for (const row of rows) {
+    try {
+      await sendDm(formatReminderMessage(row));
+      markReminder(row.id, {
+        discordNotificationStatus: "sent",
+        discordNotificationSentAt: now(),
+        discordNotificationError: null
+      });
+    } catch (error) {
+      const message = friendlyDiscordError(error);
+      markReminder(row.id, {
+        discordNotificationStatus: "failed",
+        discordNotificationError: message
+      });
+      console.error(`[reminder:${row.id}] DM failed: ${message}`);
+    }
+  }
+}
+
+function friendlyDiscordError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("Cannot send messages to this user")) return "Discord could not DM the user. Make sure the bot shares a server with the user and DMs are enabled.";
+  if (message.includes("401") || message.includes("Invalid Token")) return "Discord rejected the bot token.";
+  if (message.includes("Missing Access")) return "Discord denied access to the user/channel.";
+  return message.slice(0, 500);
+}
+
+const commands = [
+  new SlashCommandBuilder()
+    .setName("remind")
+    .setDescription("Manage NahkriinOS reminders")
+    .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
+    .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel)
+    .addSubcommand((sub) => sub
+      .setName("add")
+      .setDescription("Add a reminder")
+      .addStringOption((opt) => opt.setName("title").setDescription("Reminder title").setRequired(true))
+      .addStringOption((opt) => opt.setName("due").setDescription("Natural due date, like tomorrow at 7pm").setRequired(true))
+      .addStringOption((opt) => opt.setName("notes").setDescription("Optional notes"))
+      .addStringOption((opt) => opt.setName("priority").setDescription("Optional priority"))
+      .addStringOption((opt) => opt.setName("category").setDescription("Optional category")))
+    .addSubcommand((sub) => sub.setName("list").setDescription("List active reminders"))
+    .addSubcommand((sub) => sub.setName("complete").setDescription("Complete a reminder").addStringOption((opt) => opt.setName("id").setDescription("Reminder ID").setRequired(true)))
+    .addSubcommand((sub) => sub.setName("delete").setDescription("Delete a reminder").addStringOption((opt) => opt.setName("id").setDescription("Reminder ID").setRequired(true)))
+    .addSubcommand((sub) => sub.setName("snooze").setDescription("Snooze a reminder").addStringOption((opt) => opt.setName("id").setDescription("Reminder ID").setRequired(true)).addStringOption((opt) => opt.setName("due").setDescription("New due date").setRequired(true)))
+    .addSubcommand((sub) => sub.setName("testdm").setDescription("Send a test DM"))
+].map((command) => command.toJSON());
+
+async function registerCommands() {
+  const rest = new REST({ version: "10" }).setToken(token);
+  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+}
+
+client.once(Events.ClientReady, async () => {
+  console.log(`NahkriinOS reminder bot online as ${client.user.tag}`);
+  await registerCommands();
+  await processDueReminders();
+  setInterval(() => processDueReminders().catch((error) => console.error("Due reminder check failed", error)), 30_000);
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand() || interaction.commandName !== "remind") return;
+  if (interaction.user.id !== targetUserId) {
+    await interaction.reply({ content: "This NahkriinOS reminder bot is private.", ephemeral: true });
+    return;
+  }
+  const sub = interaction.options.getSubcommand();
+  try {
+    if (sub === "add") {
+      const reminder = normalizeReminder({
+        title: interaction.options.getString("title", true),
+        dueAt: parseDue(interaction.options.getString("due", true)),
+        notes: interaction.options.getString("notes") || "",
+        priority: interaction.options.getString("priority") || undefined,
+        category: interaction.options.getString("category") || undefined
+      }, "discord");
+      upsertReminder.run(reminder);
+      await interaction.reply({ content: `Added reminder \`${reminder.id.slice(0, 8)}\`: **${reminder.title}** due ${formatDiscordDate(reminder.dueAt)}.`, ephemeral: true });
+    } else if (sub === "list") {
+      const rows = listActive.all().filter((row) => !row.completed && !row.dismissed).slice(0, 15);
+      const content = rows.length ? rows.map((row) => `\`${row.id.slice(0, 8)}\` **${row.title}** - ${formatDiscordDate(row.dueAt)} - ${row.discordNotificationStatus}`).join("\n") : "No active reminders.";
+      await interaction.reply({ content, ephemeral: true });
+    } else if (sub === "complete") {
+      const id = resolveReminderId(interaction.options.getString("id", true));
+      markReminder(id, { completed: 1, discordNotificationStatus: "completed" });
+      await interaction.reply({ content: "Reminder completed.", ephemeral: true });
+    } else if (sub === "delete") {
+      const id = resolveReminderId(interaction.options.getString("id", true));
+      markReminder(id, { deletedAt: now() });
+      await interaction.reply({ content: "Reminder deleted.", ephemeral: true });
+    } else if (sub === "snooze") {
+      const id = resolveReminderId(interaction.options.getString("id", true));
+      markReminder(id, { dueAt: parseDue(interaction.options.getString("due", true)), completed: 0, dismissed: 0, discordNotificationStatus: "pending", discordNotificationSentAt: null, discordNotificationError: null });
+      await interaction.reply({ content: "Reminder snoozed.", ephemeral: true });
+    } else if (sub === "testdm") {
+      await sendDm("✅ **NahkriinOS VPS reminders are connected.**");
+      await interaction.reply({ content: "Test DM sent.", ephemeral: true });
+    }
+  } catch (error) {
+    await interaction.reply({ content: error instanceof Error ? error.message : String(error), ephemeral: true });
+  }
+});
+
+function resolveReminderId(input) {
+  const exact = getReminder.get(input);
+  if (exact) return exact.id;
+  const rows = listActive.all().filter((row) => row.id.startsWith(input));
+  if (rows.length === 1) return rows[0].id;
+  if (rows.length > 1) throw new Error("That short ID matches multiple reminders. Use the full ID.");
+  throw new Error("Reminder not found.");
+}
+
+function readBody(request) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    request.on("data", (chunk) => {
+      data += chunk;
+      if (data.length > 2_000_000) {
+        reject(new Error("Request body is too large."));
+        request.destroy();
+      }
+    });
+    request.on("end", () => resolve(data ? JSON.parse(data) : {}));
+    request.on("error", reject);
+  });
+}
+
+function writeJson(response, status, payload) {
+  response.writeHead(status, { "Content-Type": "application/json" });
+  response.end(JSON.stringify(payload));
+}
+
+function authorized(request) {
+  if (!apiToken) return false;
+  return request.headers.authorization === `Bearer ${apiToken}`;
+}
+
+const server = http.createServer(async (request, response) => {
+  try {
+    const url = new URL(request.url || "/", `http://${request.headers.host}`);
+    if (url.pathname === "/health") {
+      writeJson(response, 200, { ok: true, discordReady: client.isReady(), database: dbPath });
+      return;
+    }
+    if (!authorized(request)) {
+      writeJson(response, 401, { error: "Invalid or missing reminder backend API token." });
+      return;
+    }
+    if (url.pathname === "/api/testdm" && request.method === "POST") {
+      await sendDm("✅ **NahkriinOS VPS reminders are connected.**");
+      writeJson(response, 200, { ok: true });
+      return;
+    }
+    if (url.pathname === "/api/reminders/sync" && request.method === "POST") {
+      const body = await readBody(request);
+      for (const reminder of body.reminders || []) saveIncomingReminder(reminder, "desktop");
+      writeJson(response, 200, { reminders: listActive.all().map(serializeReminder) });
+      return;
+    }
+    const match = url.pathname.match(/^\/api\/reminders\/([^/]+)(?:\/(retry))?$/);
+    if (match) {
+      const id = decodeURIComponent(match[1]);
+      if (request.method === "PUT") {
+        const body = await readBody(request);
+        saveIncomingReminder({ ...(body.reminder || {}), id }, "desktop");
+        writeJson(response, 200, { reminder: serializeReminder(getReminder.get(id)) });
+        return;
+      }
+      if (request.method === "PATCH") {
+        const body = await readBody(request);
+        const existing = getReminder.get(id);
+        if (!existing) throw new Error("Reminder not found.");
+        upsertReminder.run(normalizeReminder({ ...serializeReminder(existing), ...(body.patch || {}), id }, "desktop"));
+        writeJson(response, 200, { reminder: serializeReminder(getReminder.get(id)) });
+        return;
+      }
+      if (request.method === "DELETE") {
+        markReminder(id, { deletedAt: now() });
+        writeJson(response, 200, { ok: true });
+        return;
+      }
+      if (request.method === "POST" && match[2] === "retry") {
+        markReminder(id, { discordNotificationStatus: "pending", discordNotificationSentAt: null, discordNotificationError: null });
+        writeJson(response, 200, { ok: true });
+        return;
+      }
+    }
+    if (url.pathname === "/api/reminders" && request.method === "GET") {
+      writeJson(response, 200, { reminders: listActive.all().map(serializeReminder) });
+      return;
+    }
+    writeJson(response, 404, { error: "Not found." });
+  } catch (error) {
+    writeJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+server.listen(apiPort, apiHost, () => {
+  console.log(`NahkriinOS reminder API listening on http://${apiHost}:${apiPort}`);
+  console.log(`Reminder timezone: ${reminderTimeZone}`);
+});
+
+await client.login(token);
