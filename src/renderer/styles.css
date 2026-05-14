@@ -180,6 +180,7 @@ pre,
   grid-template-columns: 260px minmax(0, 1fr) 320px;
   gap: 18px;
   padding: 18px;
+  min-height: 0;
 }
 
 .sidebar,
@@ -248,6 +249,7 @@ pre,
   flex-direction: column;
   gap: 16px;
   overflow: hidden;
+  min-width: 0;
 }
 
 .topbar {
@@ -298,6 +300,7 @@ pre,
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-width: 0;
 }
 
 .page h1,
@@ -348,6 +351,28 @@ pre,
 .tab-strip button,
 .suggestion-chips button {
   min-height: 42px;
+}
+
+.dashboard .hero-row > div:first-child {
+  min-width: 0;
+}
+
+.dashboard .hero-row > div:first-child p {
+  max-width: 58ch;
+}
+
+.dashboard .hero-row .quick-actions {
+  width: min(100%, 700px);
+  justify-content: flex-end;
+}
+
+.dashboard .hero-row .quick-actions button {
+  flex: 1 1 154px;
+}
+
+.dashboard > .columns,
+.dashboard .stat-grid {
+  min-width: 0;
 }
 
 .columns {
@@ -431,6 +456,7 @@ pre,
 .stat strong {
   font-size: 1.8rem;
   letter-spacing: -0.05em;
+  line-height: 1.05;
 }
 
 .row {
@@ -1142,6 +1168,94 @@ meter {
   }
 }
 
+@media (max-width: 1320px) {
+  .app-shell {
+    gap: 14px;
+    padding: 14px;
+    grid-template-columns: 208px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    padding: 18px 14px 14px;
+    gap: 14px;
+  }
+
+  .sidebar nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .sidebar nav button {
+    min-height: 46px;
+  }
+
+  .page {
+    gap: 14px;
+    padding-bottom: 20px;
+  }
+
+  .page h1 {
+    font-size: clamp(1.8rem, 3vw, 2.6rem);
+    max-width: 18ch;
+  }
+
+  .command-input {
+    width: min(420px, 100%);
+  }
+
+  .panel {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .stat {
+    min-height: 98px;
+    padding: 14px 16px;
+  }
+
+  .stat strong {
+    font-size: 1.5rem;
+  }
+
+  .dashboard .hero-row .quick-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .dashboard > .columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1200px) {
+  .topbar {
+    align-items: stretch;
+  }
+
+  .command-input {
+    width: 100%;
+  }
+
+  .dashboard .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard .hero-row .quick-actions button {
+    flex-basis: calc(50% - 8px);
+  }
+
+  .today-rail {
+    padding: 18px 16px;
+  }
+
+  .focus-ring {
+    width: 88px;
+    height: 88px;
+    font-size: 1.7rem;
+  }
+}
+
 @media (max-width: 1080px) {
   body {
     overflow: auto;
@@ -1188,5 +1302,86 @@ meter {
   .command-input,
   .status-pill {
     width: 100%;
+  }
+
+  .dashboard .hero-row .quick-actions button {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-height: 900px) {
+  .app-shell {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .sidebar,
+  .agent-rail {
+    border-radius: 20px;
+  }
+
+  .sidebar {
+    padding: 16px 14px 14px;
+  }
+
+  .workspace {
+    gap: 12px;
+  }
+
+  .page {
+    gap: 12px;
+    padding-top: 4px;
+  }
+
+  .panel {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .quick-actions,
+  .tab-strip,
+  .suggestion-chips,
+  .source-chips,
+  .onboarding-steps,
+  .action-grid {
+    gap: 8px;
+  }
+
+  .quick-actions button,
+  .tab-strip button,
+  .suggestion-chips button,
+  button {
+    min-height: 38px;
+    padding: 9px 12px;
+  }
+
+  .stat {
+    min-height: 92px;
+  }
+
+  .today-rail {
+    gap: 12px;
+    padding: 16px 14px;
+  }
+}
+
+@media (max-height: 760px) {
+  .page h1 {
+    font-size: clamp(1.6rem, 2.8vw, 2.15rem);
+  }
+
+  .dashboard .hero-row > div:first-child p {
+    max-width: 48ch;
+  }
+
+  .focus-ring {
+    width: 80px;
+    height: 80px;
+    margin-top: 4px;
+    font-size: 1.45rem;
+  }
+
+  .stat strong {
+    font-size: 1.35rem;
   }
 }

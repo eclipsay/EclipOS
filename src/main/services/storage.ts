@@ -78,6 +78,31 @@ const defaultSettings: AppSettings = {
     feedUrl: "",
     checkOnStartup: true
   },
+  home: {
+    compact: true,
+    showTodayRail: true,
+    widgets: {
+      pinnedNotes: true,
+      reminders: true,
+      tasks: true,
+      calendar: true,
+      clipboard: true,
+      codex: true,
+      quickLaunch: true,
+      recentFiles: true
+    }
+  },
+  calendar: {
+    googleClientId: "229934488662-944kllgv751r4082cl5i4vu8np0tmsch.apps.googleusercontent.com",
+    calendarId: "primary",
+    connectedEmail: "",
+    googleSyncToken: "",
+    lastSyncAt: "",
+    lastSyncError: "",
+    syncEnabled: false,
+    googleCalendarEnabled: true,
+    defaultDurationMinutes: 60
+  },
   entertainment: {
     trackingEnabled: true,
     immersiveEnabled: true,
@@ -174,6 +199,8 @@ const defaultData = (): AppData => ({
     }
   ],
   reminders: [],
+  tasks: [],
+  calendarEvents: [],
   clipboard: [],
   fileIndex: [],
   codexTemplates: defaultTemplates(),
@@ -192,6 +219,7 @@ export class JsonStore {
   private remindersLegacyPath = path.join(app.getPath("appData"), "Reminders", "reminders.json");
   private openAiKeyPath = path.join(app.getPath("userData"), "openai-api-key.bin");
   private discordBackendTokenPath = path.join(app.getPath("userData"), "discord-reminder-backend-token.bin");
+  private googleCalendarRefreshTokenPath = path.join(app.getPath("userData"), "google-calendar-refresh-token.bin");
   private data: AppData | null = null;
 
   async read(): Promise<AppData> {
@@ -225,6 +253,18 @@ export class JsonStore {
             ...defaultSettings.updates,
             ...parsed.settings?.updates
           },
+          home: {
+            ...defaultSettings.home,
+            ...parsed.settings?.home,
+            widgets: {
+              ...defaultSettings.home.widgets,
+              ...parsed.settings?.home?.widgets
+            }
+          },
+          calendar: {
+            ...defaultSettings.calendar,
+            ...parsed.settings?.calendar
+          },
           entertainment: {
             ...defaultSettings.entertainment,
             ...parsed.settings?.entertainment,
@@ -233,6 +273,8 @@ export class JsonStore {
           }
         },
         reminders,
+        tasks: parsed.tasks ?? [],
+        calendarEvents: parsed.calendarEvents ?? [],
         codexTemplates: parsed.codexTemplates?.length ? parsed.codexTemplates : defaultTemplates(),
         codexSessions: parsed.codexSessions ?? [],
         projects: parsed.projects ?? (parsed.settings?.projectFolders ?? []).map((projectPath) => ({
@@ -338,6 +380,41 @@ export class JsonStore {
     } catch {
       return "";
     }
+  }
+
+  async hasGoogleCalendarRefreshToken(): Promise<boolean> {
+    return (await this.getGoogleCalendarRefreshToken()).length > 0;
+  }
+
+  async saveGoogleCalendarRefreshToken(token: string): Promise<void> {
+    const trimmed = token.trim();
+    if (!trimmed) {
+      await fs.rm(this.googleCalendarRefreshTokenPath, { force: true });
+      return;
+    }
+    await fs.mkdir(path.dirname(this.googleCalendarRefreshTokenPath), { recursive: true });
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(trimmed);
+      await fs.writeFile(this.googleCalendarRefreshTokenPath, JSON.stringify({ encrypted: true, value: encrypted.toString("base64") }), "utf8");
+      return;
+    }
+    await fs.writeFile(this.googleCalendarRefreshTokenPath, JSON.stringify({ encrypted: false, value: Buffer.from(trimmed, "utf8").toString("base64") }), "utf8");
+  }
+
+  async getGoogleCalendarRefreshToken(): Promise<string> {
+    try {
+      const raw = await fs.readFile(this.googleCalendarRefreshTokenPath, "utf8");
+      const payload = JSON.parse(raw) as { encrypted: boolean; value: string };
+      const bytes = Buffer.from(payload.value, "base64");
+      if (payload.encrypted) return safeStorage.decryptString(bytes);
+      return bytes.toString("utf8");
+    } catch {
+      return "";
+    }
+  }
+
+  async clearGoogleCalendarRefreshToken(): Promise<void> {
+    await fs.rm(this.googleCalendarRefreshTokenPath, { force: true });
   }
 
   private async readLegacyReminders(): Promise<AppData["reminders"]> {

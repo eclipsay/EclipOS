@@ -69,6 +69,30 @@ In EclipOS Settings, open **Discord Reminder Backend** and set:
 
 Reminders created in Discord sync into EclipOS. Reminders created in EclipOS sync to the VPS bot, which sends the Discord DM when due.
 
+## Planner And Google Calendar
+
+EclipOS now includes:
+
+- local tasks
+- local calendar events
+- assistant-created reminders, tasks, and calendar entries
+- Google Calendar handoff using a prefilled browser link
+
+How to use it:
+
+1. Open the `Planner` view in EclipOS.
+2. Create a task or calendar event locally.
+3. Click `Send to Google Calendar` or `Open Google Calendar`.
+4. Review the prefilled event in your browser and save it to Google Calendar.
+
+Example assistant prompts:
+
+- `Add a task to renew my license next Tuesday`
+- `Remind me tomorrow at 3 PM to call the bank`
+- `Put a meeting on my calendar Friday at 1 PM for payroll review`
+
+This first version is a browser handoff, not full Google OAuth sync. It works without needing a separate Google backend.
+
 ## GitHub Setup
 
 From `E:\Codex\Assistant`:

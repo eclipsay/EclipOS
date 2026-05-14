@@ -94,6 +94,16 @@ const api = {
     save: (note: NoteItem): Promise<AppData> => ipcRenderer.invoke("notes:save", note),
     delete: (id: string): Promise<AppData> => ipcRenderer.invoke("notes:delete", id)
   },
+  tasks: {
+    save: (task: any): Promise<AppData> => ipcRenderer.invoke("tasks:save", task),
+    toggleComplete: (id: string): Promise<AppData> => ipcRenderer.invoke("tasks:toggleComplete", id),
+    delete: (id: string): Promise<AppData> => ipcRenderer.invoke("tasks:delete", id)
+  },
+  calendar: {
+    save: (event: any): Promise<AppData> => ipcRenderer.invoke("calendar:save", event),
+    delete: (id: string): Promise<AppData> => ipcRenderer.invoke("calendar:delete", id),
+    openGoogle: (eventOrId: any): Promise<string> => ipcRenderer.invoke("calendar:openGoogle", eventOrId)
+  },
   reminders: {
     save: (reminder: ReminderItem): Promise<AppData> => ipcRenderer.invoke("reminders:save", reminder),
     complete: (id: string): Promise<AppData> => ipcRenderer.invoke("reminders:complete", id),
@@ -108,6 +118,12 @@ const api = {
     saveToken: (token: string): Promise<DiscordStatus> => ipcRenderer.invoke("discord:saveToken", token),
     testDm: (token?: string): Promise<{ ok: boolean; error?: string; data: AppData }> => ipcRenderer.invoke("discord:testDm", token),
     sync: (): Promise<AppData> => ipcRenderer.invoke("discord:sync")
+  },
+  googleCalendar: {
+    status: (): Promise<any> => ipcRenderer.invoke("googleCalendar:status"),
+    connect: (): Promise<any> => ipcRenderer.invoke("googleCalendar:connect"),
+    disconnect: (): Promise<any> => ipcRenderer.invoke("googleCalendar:disconnect"),
+    sync: (): Promise<AppData> => ipcRenderer.invoke("googleCalendar:sync")
   },
   entertainment: {
     status: (): Promise<EntertainmentSnapshot> => ipcRenderer.invoke("entertainment:status"),

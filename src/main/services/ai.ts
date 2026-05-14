@@ -1,4 +1,4 @@
-import type { WebContents } from "electron";
+﻿import type { WebContents } from "electron";
 import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -18,8 +18,17 @@ type ReminderToolResult =
   | { kind: "clarify"; question: string }
   | { kind: "created"; reminder: ReminderItem };
 
+type PlannerToolResult =
+  | { kind: "none" }
+  | { kind: "clarify"; question: string }
+  | { kind: "reminder"; reminder: ReminderItem }
+  | { kind: "task"; task: any }
+  | { kind: "calendar"; event: any };
+
 type AiActions = {
   createReminder?: (draft: Partial<ReminderItem>) => Promise<ReminderItem>;
+  createTask?: (draft: any) => Promise<any>;
+  createCalendarEvent?: (draft: any) => Promise<any>;
 };
 
 function formatBytes(bytes: number) {
@@ -148,25 +157,23 @@ function average(values: number[]) {
   return clean.length ? clean.reduce((sum, value) => sum + value, 0) / clean.length : 0;
 }
 
-async function parseReminderIntent(apiKey: string, model: string, message: string): Promise<{
-  shouldCreate: boolean;
-  title?: string;
-  notes?: string;
-  dueAt?: string;
-  needsClarification?: string;
-}> {
+async function parsePlannerIntent(apiKey: string, model: string, message: string): Promise<any> {
   const response = await callResponsesApi(apiKey, {
     model,
-    max_output_tokens: 250,
+    max_output_tokens: 320,
     input: [
-      "You extract reminder creation intents for EclipOS.",
+      "You extract assistant action intents for EclipOS.",
       `Current local time: ${new Date().toISOString()}`,
       `Current time zone: ${localTimeZone}`,
       "Return only compact JSON with this exact shape:",
-      '{"shouldCreate":boolean,"title":"string","notes":"string","dueAt":"ISO-8601 string","needsClarification":"string"}',
-      "Set shouldCreate=true only when the user is clearly asking to create a reminder or be reminded.",
-      "If the request is ambiguous or missing a usable due time, set shouldCreate=false and fill needsClarification with one short question.",
+      '{"action":"none|reminder|task|calendar","title":"string","notes":"string","dueAt":"ISO-8601 string","startAt":"ISO-8601 string","endAt":"ISO-8601 string","location":"string","needsClarification":"string"}',
+      "Use action=reminder only when the user clearly wants a reminder.",
+      "Use action=task for a to-do, checklist item, follow-up, or something to track, even if it has an optional due time.",
+      "Use action=calendar for meetings, events, appointments, time blocks, or anything the user wants put on a calendar.",
+      "Use action=none for normal chat or questions.",
+      "If the request is ambiguous or missing the needed time for a reminder or calendar event, set action=none and fill needsClarification with one short question.",
       "Convert relative times like tomorrow, in 2 hours, tonight, this evening, next monday, at 5pm into ISO-8601.",
+      "For calendar events, if an end time is not given, leave endAt empty.",
       "Keep title short and natural. Put extra details into notes.",
       "",
       `User message: ${message}`
@@ -174,7 +181,7 @@ async function parseReminderIntent(apiKey: string, model: string, message: strin
   });
 
   if (!response.ok) {
-    return { shouldCreate: false };
+    return { action: "none" };
   }
 
   const json = await response.json() as any;
@@ -184,45 +191,83 @@ async function parseReminderIntent(apiKey: string, model: string, message: strin
     ""
   ).trim();
   const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return { shouldCreate: false };
+  if (!match) return { action: "none" };
   try {
     return JSON.parse(match[0]);
   } catch {
-    return { shouldCreate: false };
+    return { action: "none" };
   }
 }
 
-async function maybeCreateReminderFromRequest(store: JsonStore, apiKey: string, message: string, actions?: AiActions): Promise<ReminderToolResult> {
-  if (!actions?.createReminder) return { kind: "none" };
+async function maybeCreatePlannerEntry(store: JsonStore, apiKey: string, message: string, actions?: AiActions): Promise<PlannerToolResult> {
+  if (!actions?.createReminder && !actions?.createTask && !actions?.createCalendarEvent) return { kind: "none" };
   const data = await store.read();
-  const parsed = await parseReminderIntent(apiKey, data.settings.ai.model, message);
-  if (!parsed.shouldCreate) {
+  const parsed = await parsePlannerIntent(apiKey, data.settings.ai.model, message);
+  if (parsed.action === "none") {
     if (parsed.needsClarification?.trim()) return { kind: "clarify", question: parsed.needsClarification.trim() };
     return { kind: "none" };
   }
   const title = String(parsed.title || "").trim();
-  const dueAt = String(parsed.dueAt || "").trim();
-  if (!title || !dueAt) {
-    return { kind: "clarify", question: parsed.needsClarification?.trim() || "What should I remind you about, and when should I schedule it?" };
+  if (!title) return { kind: "clarify", question: parsed.needsClarification?.trim() || "What title should I use?" };
+  if (parsed.action === "task" && actions?.createTask) {
+    const dueAt = String(parsed.dueAt || "").trim();
+    const task = await actions.createTask({
+      id: crypto.randomUUID(),
+      title,
+      notes: String(parsed.notes || "").trim(),
+      dueAt,
+      completed: false,
+      priority: "medium",
+      status: "open",
+      createdAt: now(),
+      updatedAt: now()
+    });
+    return { kind: "task", task };
   }
-  const dueDate = new Date(dueAt);
-  if (!Number.isFinite(dueDate.getTime())) {
-    return { kind: "clarify", question: "I could not understand the reminder time. What exact date or time should I use?" };
+  if (parsed.action === "calendar" && actions?.createCalendarEvent) {
+    const startAt = String(parsed.startAt || "").trim();
+    if (!startAt) return { kind: "clarify", question: parsed.needsClarification?.trim() || "What time should I put on your calendar?" };
+    const start = new Date(startAt);
+    if (!Number.isFinite(start.getTime())) return { kind: "clarify", question: "I could not understand the calendar time. What exact start time should I use?" };
+    const endCandidate = String(parsed.endAt || "").trim();
+    const defaultDuration = Number(data.settings.calendar?.defaultDurationMinutes || 60);
+    const end = endCandidate ? new Date(endCandidate) : new Date(start.getTime() + defaultDuration * 60_000);
+    const event = await actions.createCalendarEvent({
+      id: crypto.randomUUID(),
+      title,
+      notes: String(parsed.notes || "").trim(),
+      location: String(parsed.location || "").trim(),
+      startAt: start.toISOString(),
+      endAt: end.toISOString(),
+      allDay: false,
+      createdAt: now(),
+      updatedAt: now()
+    });
+    return { kind: "calendar", event };
   }
-  const reminder = await actions.createReminder({
-    id: crypto.randomUUID(),
-    title,
-    text: title,
-    notes: String(parsed.notes || "").trim(),
-    dueAt: dueDate.toISOString(),
-    completed: false,
-    dismissed: false,
-    notified: false,
-    discordNotificationStatus: "pending",
-    createdAt: now(),
-    updatedAt: now()
-  });
-  return { kind: "created", reminder };
+  if (parsed.action === "reminder" && actions?.createReminder) {
+    const dueAt = String(parsed.dueAt || "").trim();
+    if (!dueAt) return { kind: "clarify", question: parsed.needsClarification?.trim() || "What time should I remind you?" };
+    const dueDate = new Date(dueAt);
+    if (!Number.isFinite(dueDate.getTime())) {
+      return { kind: "clarify", question: "I could not understand the reminder time. What exact date or time should I use?" };
+    }
+    const reminder = await actions.createReminder({
+      id: crypto.randomUUID(),
+      title,
+      text: title,
+      notes: String(parsed.notes || "").trim(),
+      dueAt: dueDate.toISOString(),
+      completed: false,
+      dismissed: false,
+      notified: false,
+      discordNotificationStatus: "pending",
+      createdAt: now(),
+      updatedAt: now()
+    });
+    return { kind: "reminder", reminder };
+  }
+  return { kind: "none" };
 }
 
 async function appendConversation(store: JsonStore, userMessage: AiChatMessage, assistantMessage: AiChatMessage) {
@@ -273,7 +318,7 @@ async function buildContext(store: JsonStore): Promise<AiContextPreview> {
     `RAM: ${Math.round((snapshot.ram.used / Math.max(snapshot.ram.total, 1)) * 100)}% used`,
     scan ? `Storage scan: ${formatBytes(scan.scannedBytes)} scanned` : "Storage scan: not available",
     entertainment?.active ? `Immersive mode: ${entertainment.profile}` : "Immersive mode: inactive"
-  ].join(" Â· ");
+  ].join(" · ");
   return { summary, categories, redactions, payload };
 }
 
@@ -377,33 +422,71 @@ export async function sendAiMessage(store: JsonStore, request: AiChatRequest, we
   };
 
   try {
-    const reminderResult = await maybeCreateReminderFromRequest(store, apiKey, request.message, actions);
-    if (reminderResult.kind === "clarify") {
+    const plannerResult = await maybeCreatePlannerEntry(store, apiKey, request.message, actions);
+    if (plannerResult.kind === "clarify") {
       const assistantMessage: AiChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: reminderResult.question,
+        content: plannerResult.question,
         createdAt: now(),
-        sources: ["Reminder assistant"]
+        sources: ["Planner assistant"]
       };
       await appendConversation(store, userMessage, assistantMessage);
       webContents.send("ai:stream", { kind: "done", requestId, message: assistantMessage });
       return { requestId };
     }
-    if (reminderResult.kind === "created") {
-      const due = new Date(reminderResult.reminder.dueAt);
+    if (plannerResult.kind === "reminder") {
+      const due = new Date(plannerResult.reminder.dueAt);
       const assistantMessage: AiChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: [
           `## Reminder created`,
-          `**Title:** ${reminderResult.reminder.title || reminderResult.reminder.text}`,
-          `**Due:** ${Number.isFinite(due.getTime()) ? due.toLocaleString() : reminderResult.reminder.dueAt}`,
-          reminderResult.reminder.notes ? `**Notes:** ${reminderResult.reminder.notes}` : "",
+          `**Title:** ${plannerResult.reminder.title || plannerResult.reminder.text}`,
+          `**Due:** ${Number.isFinite(due.getTime()) ? due.toLocaleString() : plannerResult.reminder.dueAt}`,
+          plannerResult.reminder.notes ? `**Notes:** ${plannerResult.reminder.notes}` : "",
           "It will follow your normal local notification and Discord reminder flow."
         ].filter(Boolean).join("\n"),
         createdAt: now(),
         sources: ["Reminder assistant", "Reminders"]
+      };
+      await appendConversation(store, userMessage, assistantMessage);
+      webContents.send("ai:stream", { kind: "done", requestId, message: assistantMessage });
+      return { requestId };
+    }
+    if (plannerResult.kind === "task") {
+      const assistantMessage: AiChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: [
+          "## Task created",
+          `**Title:** ${plannerResult.task.title}`,
+          plannerResult.task.dueAt ? `**Due:** ${new Date(plannerResult.task.dueAt).toLocaleString()}` : "",
+          plannerResult.task.notes ? `**Notes:** ${plannerResult.task.notes}` : "",
+          "You can manage it from the Planner view or show it on Home."
+        ].filter(Boolean).join("\n"),
+        createdAt: now(),
+        sources: ["Planner assistant", "Tasks"]
+      };
+      await appendConversation(store, userMessage, assistantMessage);
+      webContents.send("ai:stream", { kind: "done", requestId, message: assistantMessage });
+      return { requestId };
+    }
+    if (plannerResult.kind === "calendar") {
+      const assistantMessage: AiChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: [
+          "## Calendar event created",
+          `**Title:** ${plannerResult.event.title}`,
+          `**Starts:** ${new Date(plannerResult.event.startAt).toLocaleString()}`,
+          `**Ends:** ${new Date(plannerResult.event.endAt).toLocaleString()}`,
+          plannerResult.event.location ? `**Location:** ${plannerResult.event.location}` : "",
+          plannerResult.event.notes ? `**Notes:** ${plannerResult.event.notes}` : "",
+          "You can open it in Google Calendar from the Planner view."
+        ].filter(Boolean).join("\n"),
+        createdAt: now(),
+        sources: ["Planner assistant", "Calendar"]
       };
       await appendConversation(store, userMessage, assistantMessage);
       webContents.send("ai:stream", { kind: "done", requestId, message: assistantMessage });
@@ -573,3 +656,4 @@ export async function generateStorageRecommendations(store: JsonStore): Promise<
   const text = json.output_text ?? json.output?.flatMap((item: any) => item.content ?? []).map((item: any) => item.text ?? "").join("\n") ?? "";
   return parseRecommendations(text);
 }
+

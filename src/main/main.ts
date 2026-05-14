@@ -13,6 +13,7 @@ import { deleteReminderOnBackend, discordStatus, patchReminderOnBackend, pushRem
 import { clearEntertainmentHistory, entertainmentSnapshot, generateEntertainmentRecommendations } from "./services/entertainment.js";
 import { chooseFolders, indexFolders, openFile, revealFile } from "./services/files.js";
 import { changedFiles, gitStatus, isGitRepository, revertChanges } from "./services/git.js";
+import { connectGoogleCalendar, disconnectGoogleCalendar, googleCalendarStatus, syncGoogleCalendar } from "./services/googleCalendar.js";
 import { getLogFile, log } from "./services/logger.js";
 import { JsonStore } from "./services/storage.js";
 import { analyzeStorage, cancelStorageScan, exportStorageReport, getLightSystemSnapshot, getSystemCacheDiagnostics, getSystemSnapshot, getSystemStats, killProcess, openProcessLocation, pauseStorageScan, resumeStorageScan, runDiskBenchmark, startStorageScan, startStressTest, stopStressTest, stressTestStatus, storageScanDiagnostics, storageScanStatus, storageScanTargets } from "./services/system.js";
@@ -539,6 +540,51 @@ function normalizeReminder(reminder: ReminderItem): ReminderItem {
   };
 }
 
+function normalizeTask(task: any) {
+  return {
+    ...task,
+    id: String(task.id || crypto.randomUUID()),
+    title: String(task.title || "").trim(),
+    notes: String(task.notes || "").trim(),
+    dueAt: task.dueAt ? new Date(task.dueAt).toISOString() : "",
+    completed: Boolean(task.completed),
+    priority: task.priority || "medium",
+    status: task.completed ? "done" : task.status || "open",
+    createdAt: task.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function normalizeCalendarEvent(event: any, defaultDurationMinutes = 60) {
+  const start = event.startAt ? new Date(event.startAt) : new Date();
+  const end = event.endAt ? new Date(event.endAt) : new Date(start.getTime() + defaultDurationMinutes * 60_000);
+  return {
+    ...event,
+    id: String(event.id || crypto.randomUUID()),
+    title: String(event.title || "").trim(),
+    notes: String(event.notes || "").trim(),
+    location: String(event.location || "").trim(),
+    allDay: Boolean(event.allDay),
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+    createdAt: event.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function googleCalendarTemplateUrl(event: any) {
+  const start = new Date(event.startAt);
+  const end = new Date(event.endAt);
+  const format = (value: Date) => value.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const url = new URL("https://calendar.google.com/calendar/render");
+  url.searchParams.set("action", "TEMPLATE");
+  url.searchParams.set("text", event.title || "EclipOS event");
+  url.searchParams.set("dates", `${format(start)}/${format(end)}`);
+  if (event.notes) url.searchParams.set("details", event.notes);
+  if (event.location) url.searchParams.set("location", event.location);
+  return url.toString();
+}
+
 async function deliverDueReminder(reminder: ReminderItem) {
   if (reminder.completed || reminder.dismissed || reminder.notified || reminder.notifiedAt) return;
   showReminderNotification(reminder);
@@ -670,12 +716,12 @@ function wireIpc() {
   ipcMain.handle("data:export", async () => JSON.stringify(await store.read(), null, 2));
   ipcMain.handle("data:reset", async () => {
     const current = await store.read();
-    const next = await store.write({ ...current, commands: [], notes: [], reminders: [], clipboard: [], fileIndex: [], codexSessions: [], projects: [], settings: { ...current.settings, defaultWorkingDirectory: "", projectFolders: [] } });
+    const next = await store.write({ ...current, commands: [], notes: [], reminders: [], tasks: [], calendarEvents: [], clipboard: [], fileIndex: [], codexSessions: [], projects: [], settings: { ...current.settings, defaultWorkingDirectory: "", projectFolders: [] } });
     await scheduleAllReminders();
     return next;
   });
   ipcMain.handle("data:import", async (_event, data: AppData) => {
-    const next = await store.write({ ...data, reminders: data.reminders ?? [] });
+    const next = await store.write({ ...data, reminders: data.reminders ?? [], tasks: data.tasks ?? [], calendarEvents: data.calendarEvents ?? [] });
     await scheduleAllReminders();
     return next;
   });
@@ -699,6 +745,10 @@ function wireIpc() {
   ipcMain.handle("discord:saveToken", (_event, token: string) => saveDiscordBackendToken(store, token));
   ipcMain.handle("discord:testDm", (_event, token?: string) => testDiscordDm(store, token));
   ipcMain.handle("discord:sync", () => syncRemindersAndNotifyRenderer());
+  ipcMain.handle("googleCalendar:status", () => googleCalendarStatus(store));
+  ipcMain.handle("googleCalendar:connect", async () => connectGoogleCalendar(store));
+  ipcMain.handle("googleCalendar:disconnect", async () => disconnectGoogleCalendar(store));
+  ipcMain.handle("googleCalendar:sync", async () => syncGoogleCalendar(store));
 
   ipcMain.handle("updates:check", () => checkForUpdate());
   ipcMain.handle("updates:openDownload", async (_event, url?: string) => {
@@ -723,6 +773,17 @@ function wireIpc() {
       scheduleReminder(normalized);
       await tryReminderBackendSync(() => pushReminderToBackend(store, normalized));
       mainWindow?.webContents.send("reminders:updated", next);
+      return normalized;
+    },
+    createTask: async (draft) => {
+      const normalized = normalizeTask(draft);
+      await store.patch((data) => ({ ...data, tasks: upsertById(data.tasks ?? [], normalized) }));
+      return normalized;
+    },
+    createCalendarEvent: async (draft) => {
+      const data = await store.read();
+      const normalized = normalizeCalendarEvent(draft, data.settings.calendar?.defaultDurationMinutes || 60);
+      await store.patch((current) => ({ ...current, calendarEvents: upsertById(current.calendarEvents ?? [], normalized) }));
       return normalized;
     }
   }));
@@ -855,6 +916,38 @@ function wireIpc() {
   ipcMain.handle("notes:delete", async (_event, id: string) =>
     store.patch((data) => ({ ...data, notes: data.notes.filter((note) => note.id !== id) }))
   );
+  ipcMain.handle("tasks:save", async (_event, task: any) =>
+    store.patch((data) => ({ ...data, tasks: upsertById(data.tasks ?? [], normalizeTask(task)) }))
+  );
+  ipcMain.handle("tasks:toggleComplete", async (_event, id: string) =>
+    store.patch((data) => ({
+      ...data,
+      tasks: (data.tasks ?? []).map((task: any) => task.id === id ? normalizeTask({ ...task, completed: !task.completed, status: !task.completed ? "done" : "open" }) : task)
+    }))
+  );
+  ipcMain.handle("tasks:delete", async (_event, id: string) =>
+    store.patch((data) => ({ ...data, tasks: (data.tasks ?? []).filter((task: any) => task.id !== id) }))
+  );
+  ipcMain.handle("calendar:save", async (_event, event: any) => {
+    const data = await store.read();
+    return store.patch((draft) => ({
+      ...draft,
+      calendarEvents: upsertById(draft.calendarEvents ?? [], normalizeCalendarEvent(event, data.settings.calendar?.defaultDurationMinutes || 60))
+    }));
+  });
+  ipcMain.handle("calendar:delete", async (_event, id: string) =>
+    store.patch((data) => ({ ...data, calendarEvents: (data.calendarEvents ?? []).filter((event: any) => event.id !== id) }))
+  );
+  ipcMain.handle("calendar:openGoogle", async (_event, eventOrId: any) => {
+    const data = await store.read();
+    const event = typeof eventOrId === "string"
+      ? (data.calendarEvents ?? []).find((item: any) => item.id === eventOrId)
+      : eventOrId;
+    if (!event) throw new Error("Calendar event not found.");
+    const target = googleCalendarTemplateUrl(event);
+    await shell.openExternal(target);
+    return target;
+  });
   ipcMain.handle("reminders:save", async (_event, reminder: ReminderItem) => {
     const normalized = normalizeReminder(reminder);
     const next = await store.patch((data) => ({ ...data, reminders: upsertById(data.reminders, normalized) }));
