@@ -1,0 +1,17 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ring" x1="61" y1="128" x2="195" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#49D6E8" stop-opacity="0.28"/>
+      <stop offset="0.42" stop-color="#49D6E8"/>
+      <stop offset="1" stop-color="#EFFFFF"/>
+    </linearGradient>
+    <radialGradient id="flare" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(176 81) rotate(90) scale(28)">
+      <stop stop-color="#F8FFFF"/>
+      <stop offset="0.42" stop-color="#8DEFFF"/>
+      <stop offset="1" stop-color="#49D6E8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path d="M63 127.5C63 90.2208 93.2208 60 130.5 60C143.569 60 155.77 63.7138 166.106 70.1493C152.365 74.4422 142.391 87.2811 142.391 102.4508C142.391 121.118 157.525 136.252 176.192 136.252C181.72 136.252 186.938 134.925 191.544 132.57C189.006 168.121 159.397 196 123.196 196C89.4046 196 61 168.909 61 135.117" stroke="url(#ring)" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="176" cy="81" r="18" fill="url(#flare)"/>
+  <path d="M176 55L179.629 77.371L202 81L179.629 84.629L176 107L172.371 84.629L150 81L172.371 77.371L176 55Z" fill="#F7FFFF"/>
+</svg>

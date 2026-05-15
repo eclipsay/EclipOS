@@ -40,6 +40,20 @@ let reminderSyncTimer: NodeJS.Timeout | null = null;
 let lastPerfCpu = process.cpuUsage();
 let lastPerfAt = process.hrtime.bigint();
 
+function resolveAppIcon() {
+  const candidates = app.isPackaged
+    ? [path.resolve(__dirname, "../../dist-renderer/eclipos-mark.svg")]
+    : [path.resolve(__dirname, "../../public/eclipos-mark.svg"), path.resolve(process.cwd(), "public/eclipos-mark.svg")];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      const icon = nativeImage.createFromPath(candidate);
+      if (!icon.isEmpty()) return icon;
+    }
+  }
+  return undefined;
+}
+
 function fallbackHtml(title: string, body: string) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
     body{margin:0;background:#080c11;color:#e6edf3;font-family:Segoe UI,Arial,sans-serif;display:grid;place-items:center;height:100vh}
@@ -56,6 +70,7 @@ async function createWindow() {
     minWidth: 1040,
     minHeight: 680,
     title: "EclipOS",
+    icon: resolveAppIcon(),
     backgroundColor: "#090d12",
     webPreferences: {
       preload: path.join(__dirname, "../preload/preload.cjs"),

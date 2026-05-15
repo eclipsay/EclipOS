@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -56,6 +56,7 @@ import { formatDistanceToNow } from "date-fns";
 import type { AiChatMessage, AiContextPreview, AiStatus, AiStorageRecommendation, AppData, AppSettings, CodexAvailability, CodexPromptTemplate, CodexRunRequest, CodexSession, CommandItem, CommandKind, DiscordStatus, DiskBenchmarkResult, EntertainmentRecommendation, EntertainmentSnapshot, FileRecord, LightSystemSnapshot, MonitoringSettings, NoteItem, PerformanceDiagnostics, ProcessInfo, ReminderItem, StorageAnalysis, StorageScanItem, StorageScanResult, StorageScanTarget, StressTestKind, StressTestSession, SystemSnapshot, SystemStats, UpdateCheckResult, WatchingModeStatus } from "../shared/types";
 import "highlight.js/styles/github-dark.css";
 import "./styles.css";
+import brandMark from "./eclipos-mark.svg";
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -205,7 +206,6 @@ const nav = [
   ["planner", CalendarDays, "Planner"],
   ["notes", Notebook, "Notes"],
   ["files", FileSearch, "Files"],
-  ["focus", Timer, "Focus"],
   ["workspaces", LayoutDashboard, "Workspaces"],
   ["system", Activity, "System"],
   ["updates", Download, "Updates"],
@@ -387,7 +387,7 @@ function App() {
   return (
     <div className={`app-shell ${railCollapsed ? "rail-collapsed" : ""}`}>
       <aside className="sidebar">
-<div className="brand"><Sparkles size={20} /> EclipOS</div>
+<div className="brand"><img src={brandMark} alt="EclipOS" className="brand-mark" /> <span>EclipOS</span></div>
         <nav>
           {nav.map(([id, Icon, label]) => (
             <button key={id} className={view === id ? "active" : ""} onClick={() => setView(id)}>
@@ -416,7 +416,6 @@ function App() {
         {view === "reminders" && <RemindersView data={data} setData={setData} />}
         {view === "planner" && <PlannerView data={data} setData={setData} />}
         {view === "notes" && <Notes data={data} setData={setData} />}
-        {view === "focus" && <FocusView data={data} setData={setData} />}
         {view === "entertainment" && <EntertainmentView data={data} setData={setData} />}
         {view === "workspaces" && <WorkspacesView data={data} setData={setData} />}
         {view === "system" && <SystemCenter snapshot={snapshot} settings={data.settings} data={data} setData={setData} />}
@@ -526,18 +525,16 @@ function DashboardHome({ data, system, snapshot, recentCommands, pinnedNotes, ru
       <div className="hero-row">
         <div className="hero-copy">
           <h1>Good day. EclipOS is ready when you are.</h1>
-          <p>Your notes, planner, reminders, files, focus tools, and workspaces stay in one calm place.</p>
+          <p>Your notes, planner, reminders, files, and workspaces stay in one calm place.</p>
         </div>
         <div className="quick-actions">
           <button onClick={() => setView("assistant")}><Sparkles size={16} /> Ask assistant</button>
           <button onClick={() => setView("planner")}><CalendarDays size={16} /> Planner</button>
           <button onClick={() => setView("search")}><Search size={16} /> Find anything</button>
-          <button onClick={() => setView("focus")}><Timer size={16} /> Start focus</button>
           <button onClick={() => setView("system")}><Activity size={16} /> PC health</button>
         </div>
       </div>
       <div className="stat-grid">
-        <Stat title="Focus" value="25 min" />
         <Stat title="PC health" value={snapshot ? `${snapshot.healthScore}%` : "Loading"} />
         <Stat title="Memory" value={snapshot ? `${ramPercent}% RAM` : `${data.clipboard.length} clips`} />
         <Stat title="Tasks" value={`${(data.tasks ?? []).filter((task: any) => !task.completed).length} open`} />
@@ -589,10 +586,6 @@ function TodayRailCustom({ data, system, setView, collapsed, setCollapsed }: { d
       </div>
       {!collapsed && <p>A quieter place for the things you touch often.</p>}
       {collapsed ? <div className="collapsed-rail-actions"><button onClick={() => setView("reminders")}><Bell size={16} /></button><button onClick={() => setView("planner")}><CalendarDays size={16} /></button><button onClick={() => setView("assistant")}><Sparkles size={16} /></button></div> : <>
-      <Panel title="Next Focus">
-        <div className="focus-ring">25</div>
-        <button onClick={() => setView("focus")}><Timer size={16} /> Start timer</button>
-      </Panel>
       <Panel title="Tiny Status">
         <Row title="CPU" meta={`${system?.cpuUsage ?? 0}%`} />
         <Row title="Memory" meta={system ? `${formatBytes(system.ramUsed)} used` : "Loading"} />
@@ -627,6 +620,7 @@ function PcAssistant({ snapshot, setView }: { snapshot: SystemSnapshot | null; s
   const [sources, setSources] = useState<string[]>([]);
   const [preview, setPreview] = useState<AiContextPreview | null>(null);
   const [error, setError] = useState("");
+  const chatRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     window.assistant.ai.status().then(setStatus).catch((err: unknown) => setError(String(err)));
@@ -684,16 +678,6 @@ function PcAssistant({ snapshot, setView }: { snapshot: SystemSnapshot | null; s
     }
   }
 
-  function regenerate(message: AiChatMessage) {
-    const index = messages.findIndex((row) => row.id === message.id);
-    const previousUser = messages.slice(0, index).reverse().find((row) => row.role === "user");
-    if (previousUser) void ask(`Regenerate your previous answer for this question, with clearer Markdown formatting:\n\n${previousUser.content}`);
-  }
-
-  function summarizeShorter(message: AiChatMessage) {
-    void ask(`Summarize this answer shorter. Keep headings, bullets, risk level, and data used:\n\n${message.content}`);
-  }
-
   async function clearChat() {
     const next = await window.assistant.ai.clearChat();
     setMessages(next.aiConversation.messages);
@@ -702,6 +686,12 @@ function PcAssistant({ snapshot, setView }: { snapshot: SystemSnapshot | null; s
   async function showPreview() {
     setPreview(await window.assistant.ai.previewContext());
   }
+
+  useEffect(() => {
+    const node = chatRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [messages, draftAssistant, activeRequest]);
 
   return (
     <section className="page assistant-page">
@@ -738,9 +728,9 @@ function PcAssistant({ snapshot, setView }: { snapshot: SystemSnapshot | null; s
       <div className="assistant-grid">
         <Panel title="Conversation">
           <div className="suggestion-chips">{promptChips.map((prompt) => <button key={prompt} onClick={() => ask(prompt)}>{prompt}</button>)}</div>
-          <div className="assistant-chat compact-chat">
+          <div className="assistant-chat compact-chat" ref={chatRef}>
             {!messages.length && <Empty text="Ask anything you want. EclipOS can also use local PC context for diagnostics, storage cleanup, reminders, and system questions." />}
-            {messages.map((message) => <AssistantBubble key={message.id} message={message} onRegenerate={regenerate} onSummarize={summarizeShorter} />)}
+            {messages.map((message) => <AssistantBubble key={message.id} message={message} />)}
             {draftAssistant && <AssistantBubble message={{ id: "draft", role: "assistant", content: draftAssistant, createdAt: now(), sources }} streaming />}
           </div>
           {activeRequest && <small>Thinking...</small>}
@@ -768,11 +758,10 @@ function PcAssistant({ snapshot, setView }: { snapshot: SystemSnapshot | null; s
   );
 }
 
-function AssistantBubble({ message, streaming = false, onRegenerate, onSummarize }: { message: AiChatMessage; streaming?: boolean; onRegenerate?: (message: AiChatMessage) => void; onSummarize?: (message: AiChatMessage) => void }) {
+function AssistantBubble({ message, streaming = false }: { message: AiChatMessage; streaming?: boolean }) {
   return <div className={`assistant-bubble ${message.role} ${message.error ? "error-bubble" : ""}`}>
+    <div className="assistant-message-head">{message.role === "assistant" ? "EclipOS:" : "You:"}{streaming ? <span className="assistant-streaming"> responding...</span> : null}</div>
     <MarkdownMessage content={message.content} />
-    {message.sources?.length ? <div className="assistant-actions source-row">{message.sources.map((source) => <span key={source}>{source}</span>)}</div> : null}
-    {message.role === "assistant" && !streaming ? <div className="message-tools compact-actions"><button onClick={() => window.assistant.clipboard.copy(message.content)}>Copy</button><button onClick={() => onRegenerate?.(message)}>Redo</button><button onClick={() => onSummarize?.(message)}>Shorten</button></div> : null}
   </div>;
 }
 
@@ -1202,7 +1191,14 @@ function RemindersView({ data, setData }: { data: AppData; setData: React.Dispat
       <div className="reminder-summary compact-stats">
         {(["today", "upcoming", "overdue", "completed", "dismissed", "all"] as const).map((key) => <button key={key} className={filter === key ? "active" : ""} onClick={() => setFilter(key)}><strong>{counts[key]}</strong><span>{key}</span></button>)}
       </div>
-      <DiscordReminderBackendPanel data={data} setData={setData} />
+      <div className="reminder-top-grid">
+        <DiscordReminderBackendPanel data={data} setData={setData} />
+        <Panel title="Planner Link">
+          <Row title="Planner mirror" meta="Saved reminders create planner events automatically." />
+          <Row title="Google Calendar" meta="Use Planner to send mirrored reminder events to Google Calendar." />
+          <button onClick={() => window.assistant.calendar.openGoogle(plannerEventFromReminder({ ...draft, dueAt: new Date(dueLocal).toISOString(), title: reminderTitle(draft), text: reminderTitle(draft) } as ReminderItem))}><CalendarDays size={16} /> Preview in Google Calendar</button>
+        </Panel>
+      </div>
       <div className="reminder-layout">
         <Panel title={draft.id && data.reminders.some((item) => item.id === draft.id) ? "Edit Reminder" : "Add Reminder"}>
           <div className="reminder-form-grid">
@@ -1213,17 +1209,17 @@ function RemindersView({ data, setData }: { data: AppData; setData: React.Dispat
             <button onClick={save} disabled={!reminderTitle(draft).trim()}><Save size={16} /> Save reminder</button>
           </div>
         </Panel>
-        <Panel title="Planner Link">
-          <Row title="Planner mirror" meta="Every saved reminder also creates a planner event so it can be sent to Google Calendar." />
-          <Row title="Google Calendar" meta="Open Planner to review the mirrored event and send it to Google Calendar." />
-          <button onClick={() => window.assistant.calendar.openGoogle(plannerEventFromReminder({ ...draft, dueAt: new Date(dueLocal).toISOString(), title: reminderTitle(draft), text: reminderTitle(draft) } as ReminderItem))}><CalendarDays size={16} /> Preview in Google Calendar</button>
+        <Panel title="Quick Timing">
+          <Row title="Relative schedule" meta="Use the in/minutes/hours fields for fast reminders." />
+          <Row title="Exact schedule" meta="Use the date-time field when you need a specific reminder time." />
+          <Row title="Mirror behavior" meta="Deleting a reminder also removes its mirrored planner event." />
         </Panel>
       </div>
       <div className="section-header">
         <div className="tab-strip compact-tabs">{(["list", "calendar", "timeline"] as const).map((mode) => <button key={mode} className={viewMode === mode ? "active" : ""} onClick={() => setViewMode(mode)}>{mode}</button>)}</div>
         <select value={sort} onChange={(event) => setSort(event.target.value)}><option value="time">Sort by time</option><option value="created">Sort by created</option><option value="title">Sort by title</option></select>
       </div>
-      {viewMode === "list" && <Panel title={`Showing ${reminders.length} reminders`}>{reminders.map((reminder) => <ReminderRow key={reminder.id} reminder={reminder} setData={setData} edit={edit} />)} {!reminders.length && <Empty text="No reminders match this view." />}</Panel>}
+      {viewMode === "list" && <Panel title={`Showing ${reminders.length} reminders`}><div className="reminder-list">{reminders.map((reminder) => <ReminderRow key={reminder.id} reminder={reminder} setData={setData} edit={edit} />)} {!reminders.length && <Empty text="No reminders match this view." />}</div></Panel>}
       {viewMode === "calendar" && <ReminderCalendar reminders={reminders} setData={setData} edit={edit} />}
       {viewMode === "timeline" && <ReminderTimeline reminders={reminders} />}
     </section>
@@ -1274,7 +1270,30 @@ function ReminderRow({ reminder, setData, edit }: { reminder: ReminderItem; setD
     await window.assistant.reminders.delete(reminder.id);
     setData(await window.assistant.calendar.delete(`reminder-${reminder.id}`));
   }
-  return <div className="reminder-row-card"><button className={reminder.completed ? "check completed" : "check"} onClick={async () => setData(await window.assistant.reminders.toggleComplete(reminder.id))}>{reminder.completed ? "OK" : ""}</button><div><strong>{reminderTitle(reminder)}</strong><span>{reminder.notes || "No notes"}</span>{reminder.discordNotificationError && <span className="bad-text">{reminder.discordNotificationError}</span>}</div><time>{reminderDueLabel(reminder)}</time><span className={`reminder-status ${status.replace(" ", "-")}`}>{status}</span><span className={`reminder-status ${discordStatus}`}>Discord {discordStatus}</span><div className="row-actions"><button onClick={() => edit(reminder)}><Save size={15} /></button><button onClick={() => window.assistant.calendar.openGoogle(plannerEventFromReminder(reminder))}><CalendarDays size={15} /></button>{discordStatus === "failed" && <button onClick={async () => setData(await window.assistant.reminders.retryDiscord(reminder.id))}><RotateCcw size={15} /></button>}<button onClick={async () => setData(await window.assistant.reminders.dismiss(reminder.id))} disabled={reminder.completed || reminder.dismissed}><CheckCircle2 size={15} /></button><button onClick={removeReminder}><Trash2 size={15} /></button></div></div>;
+  return <div className={`reminder-card ${status}`}>
+    <div className="reminder-main">
+      <button className={reminder.completed ? "check completed" : "check"} onClick={async () => setData(await window.assistant.reminders.toggleComplete(reminder.id))}>{reminder.completed ? "OK" : ""}</button>
+      <div className="reminder-copy">
+        <strong>{reminderTitle(reminder)}</strong>
+        <span>{reminder.notes || "No notes"}</span>
+        {reminder.discordNotificationError && <span className="bad-text">{reminder.discordNotificationError}</span>}
+      </div>
+    </div>
+    <div className="reminder-meta">
+      <time>{reminderDueLabel(reminder)}</time>
+      <div className="assistant-actions">
+        <span className={`reminder-status ${status.replace(" ", "-")}`}>{status}</span>
+        <span className={`reminder-status ${discordStatus}`}>Discord {discordStatus}</span>
+      </div>
+    </div>
+    <div className="row-actions">
+      <button onClick={() => edit(reminder)}><Save size={15} /></button>
+      <button onClick={() => window.assistant.calendar.openGoogle(plannerEventFromReminder(reminder))}><CalendarDays size={15} /></button>
+      {discordStatus === "failed" && <button onClick={async () => setData(await window.assistant.reminders.retryDiscord(reminder.id))}><RotateCcw size={15} /></button>}
+      <button onClick={async () => setData(await window.assistant.reminders.dismiss(reminder.id))} disabled={reminder.completed || reminder.dismissed}><CheckCircle2 size={15} /></button>
+      <button onClick={removeReminder}><Trash2 size={15} /></button>
+    </div>
+  </div>;
 }
 
 function ReminderCalendar({ reminders, setData, edit }: { reminders: ReminderItem[]; setData: React.Dispatch<React.SetStateAction<AppData>>; edit: (reminder: ReminderItem) => void }) {
@@ -1397,6 +1416,11 @@ function SystemCenter({ snapshot, settings, data, setData }: { snapshot: SystemS
   const activeSnapshot = detailSnapshot ?? snapshot;
   const ramPercent = snapshot ? Math.round((snapshot.ram.used / snapshot.ram.total) * 100) : 0;
   const processes = (activeSnapshot?.processes ?? []).filter((item) => `${item.name} ${item.pid} ${item.path}`.toLowerCase().includes(processQuery.toLowerCase()));
+  const systemTabGroups = [
+    { label: "Overview", items: [["health", "Health"], ["live", "Live"], ["processes", "Processes"], ["startup", "Startup"]] },
+    { label: "Storage & Network", items: [["storage", "Storage"], ["scanner", "Scanner"], ["network", "Network"]] },
+    { label: "Advanced", items: [["specs", "Specs"], ["performance", "Performance"], ["stress", "Stress"], ["tools", "Tools"]] }
+  ] as const;
 
   useEffect(() => {
     if (!["processes", "startup", "specs"].includes(tab)) {
@@ -1454,7 +1478,20 @@ function SystemCenter({ snapshot, settings, data, setData }: { snapshot: SystemS
         </div>
         <div className="health-orb"><strong>{snapshot ? snapshot.healthScore : "--"}</strong><span>{snapshot?.healthLabel ?? "Reading"}</span></div>
       </div>
-      <div className="tab-strip">{["health", "live", "scanner", "processes", "startup", "storage", "network", "specs", "stress", "performance", "tools"].map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "scanner" ? "Storage Scanner" : item === "stress" ? "Stress Tests" : item === "performance" ? "Performance" : item}</button>)}</div>
+      <div className="system-toolbar">
+        {systemTabGroups.map((group) => (
+          <div key={group.label} className="system-tab-section">
+            <span className="system-tab-label">{group.label}</span>
+            <div className="system-tab-grid">
+              {group.items.map(([value, label]) => (
+                <button key={value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
       {!snapshot && <Panel title="Waking up sensors"><div className="skeleton-grid"><span /><span /><span /></div></Panel>}
 
       {snapshot && tab === "health" && <>

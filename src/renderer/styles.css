@@ -214,8 +214,38 @@ pre,
   letter-spacing: -0.03em;
 }
 
-.brand svg {
-  color: var(--accent);
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 12px rgba(73, 214, 232, 0.22));
+}
+
+.mini-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mini-chart span {
+  color: var(--text-soft);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.mini-chart svg {
+  width: 100%;
+  height: 108px;
+  overflow: visible;
+}
+
+.mini-chart path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 8px rgba(73, 214, 232, 0.22));
 }
 
 .sidebar nav {
@@ -658,6 +688,12 @@ pre,
   gap: 16px;
 }
 
+.reminder-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 16px;
+}
+
 .reminder-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -676,17 +712,62 @@ pre,
   gap: 12px;
 }
 
-.reminder-row-card {
+.reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reminder-card {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reminder-main {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
-  gap: 14px;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
   align-items: start;
 }
 
-.reminder-row-card > time,
-.reminder-row-card > .reminder-status,
-.reminder-row-card > .row-actions {
-  grid-column: 2 / -1;
+.reminder-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reminder-copy strong {
+  font-size: 1rem;
+}
+
+.reminder-copy span {
+  color: var(--text-soft);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.reminder-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.reminder-meta time {
+  color: var(--text-soft);
+}
+
+.reminder-card .row-actions {
+  justify-content: flex-end;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 10px;
 }
 
 .assistant-grid {
@@ -709,6 +790,22 @@ pre,
   border-radius: 16px;
 }
 
+.assistant-message-head {
+  margin-bottom: 10px;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assistant-streaming {
+  color: var(--text-dim);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
 .assistant-bubble.user {
   max-width: 76%;
 }
@@ -724,19 +821,9 @@ pre,
   padding-top: 8px;
 }
 
-.compact-actions button,
-.message-tools button {
+.compact-actions button {
   min-height: 36px;
   padding: 8px 12px;
-}
-
-.assistant-actions.source-row {
-  gap: 6px;
-}
-
-.assistant-actions.source-row span {
-  padding: 6px 9px;
-  font-size: 0.72rem;
 }
 
 .today-rail .panel {
@@ -827,8 +914,7 @@ input[type="range"] {
 }
 
 .assistant-page .source-chips,
-.assistant-actions,
-.message-tools {
+.assistant-actions {
   gap: 8px;
 }
 
@@ -1192,6 +1278,28 @@ td {
 
 meter {
   width: 100%;
+  height: 6px;
+  background: transparent;
+}
+
+meter::-webkit-meter-bar {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+
+meter::-webkit-meter-optimum-value,
+meter::-webkit-meter-suboptimum-value,
+meter::-webkit-meter-even-less-good-value {
+  background: linear-gradient(90deg, #7dff84 0%, #43f06b 100%);
+  border-radius: 999px;
+  box-shadow: 0 0 10px rgba(67, 240, 107, 0.22);
+}
+
+meter::-moz-meter-bar {
+  background: linear-gradient(90deg, #7dff84 0%, #43f06b 100%);
+  border-radius: 999px;
+  box-shadow: 0 0 10px rgba(67, 240, 107, 0.22);
 }
 
 .tab-strip {
@@ -1216,6 +1324,100 @@ meter {
   color: var(--text);
 }
 
+.system-page {
+  gap: 14px;
+}
+
+.system-page .hero-row {
+  align-items: stretch;
+}
+
+.system-page .hero-row > div:first-child {
+  min-width: 0;
+}
+
+.system-page .hero-row p {
+  max-width: 72ch;
+}
+
+.system-page .panel,
+.system-page .stat,
+.system-page .sensor-card,
+.system-page .health-orb {
+  background: #0a0e12;
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.system-page .panel,
+.system-page .sensor-card {
+  border-radius: 16px;
+}
+
+.system-page .stat {
+  border-radius: 14px;
+}
+
+.system-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.system-tab-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.system-tab-label {
+  color: var(--text-dim);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.system-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.system-tab-grid button {
+  min-height: 40px;
+  border-radius: 14px;
+  background: #10161b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-soft);
+  justify-content: flex-start;
+  padding: 10px 12px;
+}
+
+.system-tab-grid button.active {
+  background: linear-gradient(180deg, rgba(73, 214, 232, 0.16), rgba(73, 214, 232, 0.05));
+  border-color: rgba(73, 214, 232, 0.22);
+  color: var(--text);
+}
+
+.system-page .stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.system-page .sensor-card > div:first-child {
+  color: #c1c9d1;
+}
+
+.system-page .core-grid div,
+.system-page .row {
+  border-radius: 12px;
+}
+
+.system-page meter {
+  height: 6px;
+}
+
 .skeleton-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1227,7 +1429,7 @@ meter {
   border-radius: 14px;
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
   background-size: 200% 100%;
-  animation: shimmer 1.8s linear infinite;
+  animation: none;
 }
 
 .overlay {
@@ -1316,16 +1518,6 @@ meter {
   color: #ff9a7a;
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-
-  100% {
-    background-position: -200% 0;
-  }
-}
-
 @media (max-width: 1440px) {
   .app-shell {
     grid-template-columns: 198px minmax(0, 1fr);
@@ -1345,6 +1537,7 @@ meter {
   }
 
   .home-grid,
+  .reminder-top-grid,
   .reminder-layout {
     grid-template-columns: 1fr;
   }
@@ -1473,6 +1666,7 @@ meter {
 
   .columns,
   .home-grid,
+  .reminder-top-grid,
   .assistant-grid,
   .editor-grid,
   .action-grid,
