@@ -574,6 +574,177 @@ pre,
   font-size: 0.9rem;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.rail-toggle {
+  min-height: 42px;
+  padding-inline: 14px;
+}
+
+.rail-toggle.mini {
+  min-height: 34px;
+  padding: 7px 12px;
+}
+
+.app-shell.rail-collapsed {
+  grid-template-columns: 260px minmax(0, 1fr) 98px;
+}
+
+.agent-rail.collapsed {
+  padding: 12px 10px;
+}
+
+.rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.collapsed-rail-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.collapsed-rail-actions button {
+  width: 100%;
+  min-height: 44px;
+}
+
+.hero-copy,
+.welcome-panel,
+.dashboard .panel,
+.reminder-row-card,
+.assistant-bubble,
+.row {
+  min-width: 0;
+}
+
+.welcome-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dashboard .panel {
+  min-height: 182px;
+}
+
+.dashboard.compact-home .panel {
+  min-height: 164px;
+}
+
+.compact-stats button strong {
+  font-size: 1.7rem;
+}
+
+.reminder-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+  gap: 16px;
+}
+
+.reminder-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.reminder-form-grid > input:last-of-type,
+.reminder-form-grid > button,
+.relative-fields {
+  grid-column: 1 / -1;
+}
+
+.relative-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px;
+  gap: 12px;
+}
+
+.reminder-row-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.reminder-row-card > time,
+.reminder-row-card > .reminder-status,
+.reminder-row-card > .row-actions {
+  grid-column: 2 / -1;
+}
+
+.assistant-grid {
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.7fr);
+  align-items: start;
+}
+
+.assistant-page .panel:first-child {
+  gap: 12px;
+}
+
+.compact-chat {
+  min-height: 280px;
+  max-height: 54vh;
+  gap: 10px;
+}
+
+.assistant-bubble {
+  padding: 14px;
+  border-radius: 16px;
+}
+
+.assistant-bubble.user {
+  max-width: 76%;
+}
+
+.assistant-bubble.assistant {
+  max-width: 88%;
+}
+
+.assistant-input {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(6, 8, 11, 0), rgba(6, 8, 11, 0.94) 32%);
+  padding-top: 8px;
+}
+
+.compact-actions button,
+.message-tools button {
+  min-height: 36px;
+  padding: 8px 12px;
+}
+
+.assistant-actions.source-row {
+  gap: 6px;
+}
+
+.assistant-actions.source-row span {
+  padding: 6px 9px;
+  font-size: 0.72rem;
+}
+
+.today-rail .panel {
+  min-height: auto;
+}
+
+.today-rail p {
+  font-size: 0.92rem;
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -1162,9 +1333,18 @@ meter {
     display: none;
   }
 
+  .topbar .rail-toggle:not(.mini) {
+    display: none;
+  }
+
   .stat-grid,
   .reminder-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-grid,
+  .reminder-layout {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1226,6 +1406,10 @@ meter {
   .dashboard > .columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .home-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1200px) {
@@ -1239,6 +1423,10 @@ meter {
 
   .dashboard .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-grid {
+    grid-template-columns: 1fr;
   }
 
   .dashboard .hero-row .quick-actions button {
@@ -1277,6 +1465,7 @@ meter {
   }
 
   .columns,
+  .home-grid,
   .assistant-grid,
   .editor-grid,
   .action-grid,

@@ -130,7 +130,6 @@ const emptyData: AppData = {
         tasks: true,
         calendar: true,
         clipboard: true,
-        codex: true,
         quickLaunch: true,
         recentFiles: true
       }
@@ -209,7 +208,6 @@ const nav = [
   ["focus", Timer, "Focus"],
   ["workspaces", LayoutDashboard, "Workspaces"],
   ["system", Activity, "System"],
-  ["codex", Bot, "Codex"],
   ["updates", Download, "Updates"],
   ["settings", Settings, "Settings"]
 ] as const;
@@ -280,10 +278,28 @@ function eventDateLabel(event: any) {
   return `${start.toLocaleString()}${Number.isFinite(end.getTime()) ? ` - ${end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`;
 }
 
+function plannerEventFromReminder(reminder: ReminderItem) {
+  const due = reminderDueDate(reminder) ?? new Date(Date.now() + 60 * 60_000);
+  return {
+    id: `reminder-${reminder.id}`,
+    title: reminderTitle(reminder),
+    notes: reminder.notes || "",
+    location: "",
+    startAt: due.toISOString(),
+    endAt: new Date(due.getTime() + 30 * 60_000).toISOString(),
+    allDay: false,
+    source: "reminder",
+    reminderId: reminder.id,
+    createdAt: reminder.createdAt,
+    updatedAt: reminder.updatedAt
+  };
+}
+
 function App() {
   const [data, setData] = useState<AppData>(emptyData);
   const [view, setView] = useState("dashboard");
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const [query, setQuery] = useState("");
   const [system, setSystem] = useState<SystemStats | null>(null);
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
@@ -298,14 +314,6 @@ function App() {
   useEffect(() => {
     refresh().catch((err) => setError(String(err)));
     const stopCommandPalette = window.assistant.onOpenCommandPalette(() => setPaletteOpen(true));
-    const stopCodex = window.assistant.onCodexSession((session: CodexSession) => {
-      setData((current) => ({
-        ...current,
-        codexSessions: current.codexSessions.some((item) => item.id === session.id)
-          ? current.codexSessions.map((item) => item.id === session.id ? session : item)
-          : [session, ...current.codexSessions]
-      }));
-    });
     const stopReminders = window.assistant.onRemindersUpdated(setData);
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -341,7 +349,6 @@ function App() {
     const timer = setInterval(tick, intervalMs);
     return () => {
       stopCommandPalette();
-      stopCodex();
       stopReminders();
       window.removeEventListener("keydown", onKey);
       clearInterval(timer);
@@ -378,7 +385,7 @@ function App() {
   const pinnedNotes = data.notes.filter((note) => note.pinned).slice(0, 4);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${railCollapsed ? "rail-collapsed" : ""}`}>
       <aside className="sidebar">
 <div className="brand"><Sparkles size={20} /> EclipOS</div>
         <nav>
@@ -394,7 +401,10 @@ function App() {
       <main className="workspace">
         <header className="topbar">
 <button className="command-input" onClick={() => setPaletteOpen(true)}><Search size={17} /> Search EclipOS...</button>
-          <div className="status-pill"><Moon size={15} /> {data.settings.theme} mode</div>
+          <div className="topbar-actions">
+            {data.settings.home?.showTodayRail !== false && <button className="rail-toggle" onClick={() => setRailCollapsed((value) => !value)}>{railCollapsed ? "Open sidebar" : "Collapse sidebar"}</button>}
+            <div className="status-pill"><Moon size={15} /> {data.settings.theme} mode</div>
+          </div>
         </header>
         {error && <div className="error">{error}</div>}
 {update?.available && update.latest && <div className="update-banner"><div><strong>EclipOS {update.latest.version} is available</strong><span>{update.latest.releaseNotes || "A newer Windows build is ready to download."}</span></div><button onClick={() => window.assistant.updates.openDownload(update.latest?.downloadUrl)}><Download size={16} /> Download</button><button onClick={() => setUpdate(null)}>Later</button></div>}
@@ -402,7 +412,6 @@ function App() {
         {view === "assistant" && <PcAssistant snapshot={snapshot} setView={setView} />}
         {view === "search" && <SearchHub data={data} runCommand={runCommand} setView={setView} />}
         {view === "files" && <Files data={data} setData={setData} />}
-        {view === "codex" && <CodexAgent data={data} setData={setData} setError={setError} />}
         {view === "clipboard" && <ClipboardView data={data} setData={setData} />}
         {view === "reminders" && <RemindersView data={data} setData={setData} />}
         {view === "planner" && <PlannerView data={data} setData={setData} />}
@@ -415,7 +424,7 @@ function App() {
         {view === "settings" && <SettingsView data={data} setData={setData} />}
       </main>
 
-      {data.settings.home?.showTodayRail !== false && <aside className="agent-rail"><TodayRailCustom data={data} system={system} setView={setView} /></aside>}
+      {data.settings.home?.showTodayRail !== false && <aside className={`agent-rail ${railCollapsed ? "collapsed" : ""}`}><TodayRailCustom data={data} system={system} setView={setView} collapsed={railCollapsed} setCollapsed={setRailCollapsed} /></aside>}
       {paletteOpen && <CommandPalette data={data} query={query} setQuery={setQuery} close={() => setPaletteOpen(false)} runCommand={runCommand} setView={setView} />}
     </div>
   );
@@ -508,15 +517,16 @@ function DashboardHome({ data, system, snapshot, recentCommands, pinnedNotes, ru
   const widgets = data.settings.home?.widgets ?? {};
   const tasks = nextTasks(data.tasks ?? [], 5);
   const events = upcomingEvents(data.calendarEvents ?? [], 4);
+  const reminderCount = nextReminders(data.reminders, 6).length;
   async function saveHomeSettings(nextHome: any) {
     setData(await window.assistant.settings.save({ ...data.settings, home: nextHome }));
   }
   return (
     <section className={`page dashboard ${data.settings.home?.compact ? "compact-home" : ""}`}>
       <div className="hero-row">
-        <div>
+        <div className="hero-copy">
           <h1>Good day. EclipOS is ready when you are.</h1>
-          <p>Your notes, planner, reminders, files, focus tools, workspaces, and Codex helper live in one calm place.</p>
+          <p>Your notes, planner, reminders, files, focus tools, and workspaces stay in one calm place.</p>
         </div>
         <div className="quick-actions">
           <button onClick={() => setView("assistant")}><Sparkles size={16} /> Ask assistant</button>
@@ -531,34 +541,38 @@ function DashboardHome({ data, system, snapshot, recentCommands, pinnedNotes, ru
         <Stat title="PC health" value={snapshot ? `${snapshot.healthScore}%` : "Loading"} />
         <Stat title="Memory" value={snapshot ? `${ramPercent}% RAM` : `${data.clipboard.length} clips`} />
         <Stat title="Tasks" value={`${(data.tasks ?? []).filter((task: any) => !task.completed).length} open`} />
+        <Stat title="Reminders" value={`${reminderCount} active`} />
+        <Stat title="Calendar" value={`${events.length} upcoming`} />
       </div>
       {!data.settings.defaultWorkingDirectory && (
         <Panel title="Welcome to EclipOS">
-          <div className="onboarding-steps">
-            <span>1. Choose a theme in Settings</span>
-            <span>2. Add favorite folders or projects</span>
-            <span>3. Connect your planner and Google Calendar flow</span>
-            <span>4. Start from Home each day</span>
+          <div className="welcome-panel">
+            <p>Start simple. Add a workspace, connect Google Calendar, and keep reminders close to your planner.</p>
+            <div className="onboarding-steps">
+              <span>Choose a theme</span>
+              <span>Add a workspace</span>
+              <span>Connect calendar</span>
+              <span>Use Home daily</span>
+            </div>
+            <div className="quick-actions"><button onClick={() => setView("workspaces")}><FolderOpen size={16} /> Add workspace</button><button onClick={() => setView("settings")}><Settings size={16} /> Customize Home</button></div>
           </div>
-          <div className="quick-actions"><button onClick={() => setView("workspaces")}><FolderOpen size={16} /> Add workspace</button><button onClick={() => setView("settings")}><Settings size={16} /> Customize Home</button></div>
         </Panel>
       )}
-      <div className="columns">
+      <div className="home-grid">
         {widgets.pinnedNotes !== false && <Panel title="Pinned Notes">{pinnedNotes.length ? pinnedNotes.map((note) => <Row key={note.id} title={note.title} meta={note.tags.join(", ") || "Pinned note"} />) : <Empty text="Pin a note and it will stay close at hand." />}</Panel>}
         {widgets.reminders !== false && <Panel title="Reminders">{nextReminders(data.reminders, 5).map((reminder) => <Row key={reminder.id} title={reminder.title || reminder.text} meta={reminderDueLabel(reminder)} action={<button onClick={() => setView("reminders")}><Bell size={15} /></button>} />)} {!nextReminders(data.reminders, 5).length && <Empty text="Add a reminder and EclipOS will keep it nearby." />}</Panel>}
         {widgets.tasks !== false && <Panel title="Tasks">{tasks.map((task) => <Row key={task.id} title={task.title} meta={task.dueAt ? `Due ${new Date(task.dueAt).toLocaleString()}` : "No due date"} action={<button onClick={async () => setData(await window.assistant.tasks.toggleComplete(task.id))}><CheckCircle2 size={15} /></button>} />)} {!tasks.length && <Empty text="Add a task from Planner or ask the assistant to track one." />}</Panel>}
         {widgets.calendar !== false && <Panel title="Calendar">{events.map((event) => <Row key={event.id} title={event.title} meta={eventDateLabel(event)} action={<button onClick={() => setView("planner")}><CalendarDays size={15} /></button>} />)} {!events.length && <Empty text="Upcoming events will appear here." />}</Panel>}
         {widgets.clipboard !== false && <Panel title="Recent Clipboard">{data.clipboard.slice(0, 5).map((item) => <Row key={item.id} title={item.text.slice(0, 80)} meta={formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })} action={<button onClick={() => window.assistant.clipboard.copy(item.text)}><Clipboard size={15} /></button>} />)} {!data.clipboard.length && <Empty text="Copy text anywhere and EclipOS will remember useful snippets." />}</Panel>}
       </div>
-      <div className="columns">
-        {widgets.codex !== false && <Panel title="Codex Dev Agent">{data.codexSessions.slice(0, 3).map((session) => <Row key={session.id} title={session.title} meta={`${session.status} · ${session.projectFolder}`} />)} {!data.codexSessions.length && <Empty text="Codex is ready when you need help with a project." />}<button onClick={() => setView("codex")}><Bot size={16} /> Open Codex</button></Panel>}
+      <div className="home-grid">
         {widgets.quickLaunch !== false && <Panel title="Quick Launch">{recentCommands.length ? recentCommands.slice(0, 4).map((command) => <Row key={command.id} title={command.name} meta={command.kind} action={<button onClick={() => runCommand(command)}><Play size={15} /></button>} />) : <Empty text="Add websites, folders, apps, or scripts to launch them instantly." />}</Panel>}
         {widgets.recentFiles !== false && <Panel title="Recent Files">{data.fileIndex.slice(0, 4).map((file) => <Row key={file.id} title={file.name} meta={file.path} action={<button onClick={() => window.assistant.files.open(file.path)}><FolderOpen size={15} /></button>} />)} {!data.fileIndex.length && <Empty text="Index a folder to make file search useful." />}</Panel>}
         <Panel title="Customize Home">
           <div className="form">
             <label><input type="checkbox" checked={data.settings.home?.compact !== false} onChange={(e) => saveHomeSettings({ ...(data.settings.home ?? {}), compact: e.target.checked, widgets })} /> Compact Home mode</label>
             <label><input type="checkbox" checked={data.settings.home?.showTodayRail !== false} onChange={(e) => saveHomeSettings({ ...(data.settings.home ?? {}), showTodayRail: e.target.checked, widgets })} /> Show Today rail</label>
-            {Object.entries(widgets).map(([key, value]) => <label key={key}><input type="checkbox" checked={Boolean(value)} onChange={(e) => saveHomeSettings({ ...(data.settings.home ?? {}), widgets: { ...widgets, [key]: e.target.checked } })} /> {key}</label>)}
+            {Object.entries(widgets).filter(([key]) => key !== "codex").map(([key, value]) => <label key={key}><input type="checkbox" checked={Boolean(value)} onChange={(e) => saveHomeSettings({ ...(data.settings.home ?? {}), widgets: { ...widgets, [key]: e.target.checked } })} /> {key}</label>)}
           </div>
         </Panel>
       </div>
@@ -566,13 +580,15 @@ function DashboardHome({ data, system, snapshot, recentCommands, pinnedNotes, ru
   );
 }
 
-function TodayRailCustom({ data, system, setView }: { data: AppData; system: SystemStats | null; setView: (view: string) => void }) {
+function TodayRailCustom({ data, system, setView, collapsed, setCollapsed }: { data: AppData; system: SystemStats | null; setView: (view: string) => void; collapsed: boolean; setCollapsed: React.Dispatch<React.SetStateAction<boolean>> }) {
   return (
     <section className="today-rail">
-      <div>
+      <div className="rail-header">
         <h2>Today</h2>
-        <p>A quieter place for the things you touch often.</p>
+        <button className="rail-toggle mini" onClick={() => setCollapsed((value) => !value)}>{collapsed ? "Open" : "Hide"}</button>
       </div>
+      {!collapsed && <p>A quieter place for the things you touch often.</p>}
+      {collapsed ? <div className="collapsed-rail-actions"><button onClick={() => setView("reminders")}><Bell size={16} /></button><button onClick={() => setView("planner")}><CalendarDays size={16} /></button><button onClick={() => setView("assistant")}><Sparkles size={16} /></button></div> : <>
       <Panel title="Next Focus">
         <div className="focus-ring">25</div>
         <button onClick={() => setView("focus")}><Timer size={16} /> Start timer</button>
@@ -591,10 +607,11 @@ function TodayRailCustom({ data, system, setView }: { data: AppData; system: Sys
         {!nextTasks(data.tasks ?? [], 3).length && <Empty text="No open tasks." />}
         <button onClick={() => setView("planner")}><CheckSquare size={16} /> Open planner</button>
       </Panel>
-      <Panel title="Codex">
-        <Row title={data.settings.defaultWorkingDirectory ? "Project selected" : "No project yet"} meta={data.settings.defaultWorkingDirectory || "Choose a workspace when needed"} />
-        <button onClick={() => setView("codex")}><Bot size={16} /> Open Codex</button>
+      <Panel title="Calendar">
+        {upcomingEvents(data.calendarEvents ?? [], 2).map((event) => <Row key={event.id} title={event.title} meta={eventDateLabel(event)} />)}
+        {!upcomingEvents(data.calendarEvents ?? [], 2).length && <Empty text="No upcoming events." />}
       </Panel>
+      </>}
     </section>
   );
 }
@@ -637,7 +654,7 @@ function PcAssistant({ snapshot, setView }: { snapshot: SystemSnapshot | null; s
     return stop;
   }, []);
 
-  const promptChips = ["Summarize my PC health", "What can I safely clean up?", "Help me plan my day", "Draft a message for me", "Set a reminder for tomorrow", "Explain high RAM usage", "Analyze storage"];
+  const promptChips = ["Plan my day", "Draft a message", "Set a reminder for tomorrow", "Explain high RAM usage", "Analyze storage"];
 
   async function saveKey(test = false) {
     try {
@@ -691,7 +708,7 @@ function PcAssistant({ snapshot, setView }: { snapshot: SystemSnapshot | null; s
       <div className="hero-row">
         <div>
           <h1>AI Assistant</h1>
-          <p>Ask general questions, get writing help, think through ideas, or use your local PC context when you want system-aware answers.</p>
+          <p>General chat, writing help, planning, and PC-aware answers when you need them.</p>
         </div>
         <div className="quick-actions">
           <button onClick={() => setMode(mode === "simple" ? "advanced" : "simple")}><Info size={16} /> {mode === "simple" ? "Simple" : "Advanced"} mode</button>
@@ -721,14 +738,14 @@ function PcAssistant({ snapshot, setView }: { snapshot: SystemSnapshot | null; s
       <div className="assistant-grid">
         <Panel title="Conversation">
           <div className="suggestion-chips">{promptChips.map((prompt) => <button key={prompt} onClick={() => ask(prompt)}>{prompt}</button>)}</div>
-          <div className="assistant-chat">
+          <div className="assistant-chat compact-chat">
             {!messages.length && <Empty text="Ask anything you want. EclipOS can also use local PC context for diagnostics, storage cleanup, reminders, and system questions." />}
             {messages.map((message) => <AssistantBubble key={message.id} message={message} onRegenerate={regenerate} onSummarize={summarizeShorter} />)}
             {draftAssistant && <AssistantBubble message={{ id: "draft", role: "assistant", content: draftAssistant, createdAt: now(), sources }} streaming />}
           </div>
           {activeRequest && <small>Thinking...</small>}
-          <div className="assistant-input"><input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && input.trim() && ask(input.trim())} placeholder="Ask anything, or ask for a reminder..." disabled={!status?.configured || !!activeRequest} /><button onClick={() => input.trim() && ask(input.trim())} disabled={!status?.configured || !!activeRequest}><Sparkles size={16} /> Ask</button></div>
-          <div className="quick-actions"><button onClick={clearChat}>Clear chat</button><button onClick={async () => setError(`Exported chat: ${await window.assistant.ai.exportChat()}`)}>Export chat</button></div>
+          <div className="assistant-input"><input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && input.trim() && ask(input.trim())} placeholder="Ask anything..." disabled={!status?.configured || !!activeRequest} /><button onClick={() => input.trim() && ask(input.trim())} disabled={!status?.configured || !!activeRequest}><Sparkles size={16} /> Ask</button></div>
+          <div className="quick-actions compact-actions"><button onClick={clearChat}>Clear</button><button onClick={async () => setError(`Exported chat: ${await window.assistant.ai.exportChat()}`)}>Export</button></div>
         </Panel>
 
         <div className="assistant-side">
@@ -755,7 +772,7 @@ function AssistantBubble({ message, streaming = false, onRegenerate, onSummarize
   return <div className={`assistant-bubble ${message.role} ${message.error ? "error-bubble" : ""}`}>
     <MarkdownMessage content={message.content} />
     {message.sources?.length ? <div className="assistant-actions source-row">{message.sources.map((source) => <span key={source}>{source}</span>)}</div> : null}
-    {message.role === "assistant" && !streaming ? <div className="message-tools"><button onClick={() => window.assistant.clipboard.copy(message.content)}>Copy response</button><button onClick={() => onRegenerate?.(message)}>Regenerate</button><button onClick={() => onSummarize?.(message)}>Summarize shorter</button></div> : null}
+    {message.role === "assistant" && !streaming ? <div className="message-tools compact-actions"><button onClick={() => window.assistant.clipboard.copy(message.content)}>Copy</button><button onClick={() => onRegenerate?.(message)}>Redo</button><button onClick={() => onSummarize?.(message)}>Shorten</button></div> : null}
   </div>;
 }
 
@@ -807,7 +824,7 @@ function SearchHub({ data, runCommand, setView }: { data: AppData; runCommand: (
   const clips = data.clipboard.filter((item) => item.text.toLowerCase().includes(needle)).slice(0, 5);
   return (
     <section className="page">
-      <div className="hero-row"><div><h1>Find anything fast.</h1><p>Search notes, files, clipboard, commands, workspaces, settings, and Codex sessions.</p></div><button onClick={() => setView("settings")}><Settings size={16} /> Settings</button></div>
+      <div className="hero-row"><div><h1>Find anything fast.</h1><p>Search notes, files, clipboard, commands, workspaces, and settings.</p></div><button onClick={() => setView("settings")}><Settings size={16} /> Settings</button></div>
       <input className="big-search" autoFocus value={q} onChange={(event) => setQ(event.target.value)} placeholder="Type to search your day..." />
       <div className="columns">
         <Panel title="Launch">{commands.map((command) => <Row key={command.id} title={command.name} meta={command.value} action={<button onClick={() => runCommand(command)}><Play size={15} /></button>} />)} {!commands.length && <Empty text="No matching launchers yet." />}</Panel>
@@ -1133,7 +1150,7 @@ function DiscordReminderBackendPanel({ data, setData }: { data: AppData; setData
 }
 
 function RemindersView({ data, setData }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>> }) {
-  const [filter, setFilter] = useState("today");
+  const [filter, setFilter] = useState("upcoming");
   const [sort, setSort] = useState("time");
   const [viewMode, setViewMode] = useState<"list" | "calendar" | "timeline">("list");
   const [draft, setDraft] = useState<ReminderItem>(() => createReminderDraft());
@@ -1159,7 +1176,8 @@ function RemindersView({ data, setData }: { data: AppData; setData: React.Dispat
     const due = createFromRelative() ?? new Date(dueLocal);
     if (!title || Number.isNaN(due.getTime())) return;
     const reminder: ReminderItem = { ...draft, text: title, title, dueAt: due.toISOString(), notified: false, dismissed: false, notifiedAt: undefined, dismissedAt: undefined, discordNotificationStatus: "pending", discordNotificationSentAt: undefined, discordNotificationError: undefined, updatedAt: now() };
-    setData(await window.assistant.reminders.save(reminder));
+    await window.assistant.reminders.save(reminder);
+    setData(await window.assistant.calendar.save(plannerEventFromReminder(reminder)));
     setDraft(createReminderDraft());
     setRelativeAmount("");
     setDueLocal(datetimeInputValue(new Date(Date.now() + 60 * 60_000)));
@@ -1181,11 +1199,11 @@ function RemindersView({ data, setData }: { data: AppData; setData: React.Dispat
         <div><h1>Reminders</h1><p>Local reminders, quick scheduling, and calm views for what is due today and later.</p></div>
         <div className="quick-actions"><button onClick={() => window.assistant.reminders.testNotification()}><Bell size={16} /> Test notification</button><button onClick={() => setDraft(createReminderDraft())}><Plus size={16} /> New</button></div>
       </div>
-      <div className="reminder-summary">
+      <div className="reminder-summary compact-stats">
         {(["today", "upcoming", "overdue", "completed", "dismissed", "all"] as const).map((key) => <button key={key} className={filter === key ? "active" : ""} onClick={() => setFilter(key)}><strong>{counts[key]}</strong><span>{key}</span></button>)}
       </div>
       <DiscordReminderBackendPanel data={data} setData={setData} />
-      <div className="reminder-composer">
+      <div className="reminder-layout">
         <Panel title={draft.id && data.reminders.some((item) => item.id === draft.id) ? "Edit Reminder" : "Add Reminder"}>
           <div className="reminder-form-grid">
             <input value={draft.title ?? draft.text} onChange={(event) => setDraft({ ...draft, title: event.target.value, text: event.target.value })} placeholder="Reminder title" />
@@ -1194,6 +1212,11 @@ function RemindersView({ data, setData }: { data: AppData; setData: React.Dispat
             <input value={draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="Optional notes" />
             <button onClick={save} disabled={!reminderTitle(draft).trim()}><Save size={16} /> Save reminder</button>
           </div>
+        </Panel>
+        <Panel title="Planner Link">
+          <Row title="Planner mirror" meta="Every saved reminder also creates a planner event so it can be sent to Google Calendar." />
+          <Row title="Google Calendar" meta="Open Planner to review the mirrored event and send it to Google Calendar." />
+          <button onClick={() => window.assistant.calendar.openGoogle(plannerEventFromReminder({ ...draft, dueAt: new Date(dueLocal).toISOString(), title: reminderTitle(draft), text: reminderTitle(draft) } as ReminderItem))}><CalendarDays size={16} /> Preview in Google Calendar</button>
         </Panel>
       </div>
       <div className="section-header">
@@ -1247,7 +1270,11 @@ function sortReminders(reminders: ReminderItem[], sort: string) {
 function ReminderRow({ reminder, setData, edit }: { reminder: ReminderItem; setData: React.Dispatch<React.SetStateAction<AppData>>; edit: (reminder: ReminderItem) => void }) {
   const status = reminderStatus(reminder);
   const discordStatus = reminder.discordNotificationStatus ?? (reminder.notified ? "sent" : "pending");
-  return <div className="reminder-row-card"><button className={reminder.completed ? "check completed" : "check"} onClick={async () => setData(await window.assistant.reminders.toggleComplete(reminder.id))}>{reminder.completed ? "OK" : ""}</button><div><strong>{reminderTitle(reminder)}</strong><span>{reminder.notes || "No notes"}</span>{reminder.discordNotificationError && <span className="bad-text">{reminder.discordNotificationError}</span>}</div><time>{reminderDueLabel(reminder)}</time><span className={`reminder-status ${status.replace(" ", "-")}`}>{status}</span><span className={`reminder-status ${discordStatus}`}>Discord {discordStatus}</span><div className="row-actions"><button onClick={() => edit(reminder)}><Save size={15} /></button>{discordStatus === "failed" && <button onClick={async () => setData(await window.assistant.reminders.retryDiscord(reminder.id))}><RotateCcw size={15} /></button>}<button onClick={async () => setData(await window.assistant.reminders.dismiss(reminder.id))} disabled={reminder.completed || reminder.dismissed}><CheckCircle2 size={15} /></button><button onClick={async () => setData(await window.assistant.reminders.delete(reminder.id))}><Trash2 size={15} /></button></div></div>;
+  async function removeReminder() {
+    await window.assistant.reminders.delete(reminder.id);
+    setData(await window.assistant.calendar.delete(`reminder-${reminder.id}`));
+  }
+  return <div className="reminder-row-card"><button className={reminder.completed ? "check completed" : "check"} onClick={async () => setData(await window.assistant.reminders.toggleComplete(reminder.id))}>{reminder.completed ? "OK" : ""}</button><div><strong>{reminderTitle(reminder)}</strong><span>{reminder.notes || "No notes"}</span>{reminder.discordNotificationError && <span className="bad-text">{reminder.discordNotificationError}</span>}</div><time>{reminderDueLabel(reminder)}</time><span className={`reminder-status ${status.replace(" ", "-")}`}>{status}</span><span className={`reminder-status ${discordStatus}`}>Discord {discordStatus}</span><div className="row-actions"><button onClick={() => edit(reminder)}><Save size={15} /></button><button onClick={() => window.assistant.calendar.openGoogle(plannerEventFromReminder(reminder))}><CalendarDays size={15} /></button>{discordStatus === "failed" && <button onClick={async () => setData(await window.assistant.reminders.retryDiscord(reminder.id))}><RotateCcw size={15} /></button>}<button onClick={async () => setData(await window.assistant.reminders.dismiss(reminder.id))} disabled={reminder.completed || reminder.dismissed}><CheckCircle2 size={15} /></button><button onClick={removeReminder}><Trash2 size={15} /></button></div></div>;
 }
 
 function ReminderCalendar({ reminders, setData, edit }: { reminders: ReminderItem[]; setData: React.Dispatch<React.SetStateAction<AppData>>; edit: (reminder: ReminderItem) => void }) {
@@ -1279,6 +1306,7 @@ function PlannerView({ data, setData }: { data: AppData; setData: (data: AppData
   });
   const tasks = nextTasks(data.tasks ?? [], 50);
   const events = upcomingEvents(data.calendarEvents ?? [], 50);
+  const reminders = nextReminders(data.reminders ?? [], 50);
 
   async function saveTask() {
     if (!taskDraft.title.trim()) return;
@@ -1294,9 +1322,9 @@ function PlannerView({ data, setData }: { data: AppData; setData: (data: AppData
     setEventDraft({ id: uid(), title: "", notes: "", location: "", startAt: start.toISOString(), endAt: end.toISOString(), allDay: false, createdAt: now(), updatedAt: now() });
   }
 
-  return <section className="page">
+  return <section className="page planner-page">
     <div className="hero-row">
-      <div><h1>Planner</h1><p>Tasks, calendar blocks, and a Google Calendar handoff flow from one place.</p></div>
+      <div><h1>Planner</h1><p>Tasks, events, and reminder mirrors that can flow into Google Calendar.</p></div>
       <div className="quick-actions"><button onClick={() => window.assistant.calendar.openGoogle({ title: "New EclipOS event", startAt: eventDraft.startAt, endAt: eventDraft.endAt, notes: eventDraft.notes, location: eventDraft.location })}><CalendarDays size={16} /> Open Google Calendar</button></div>
     </div>
     <div className="editor-grid">
@@ -1323,6 +1351,10 @@ function PlannerView({ data, setData }: { data: AppData; setData: (data: AppData
       <Panel title="Open Tasks">{tasks.map((task) => <Row key={task.id} title={task.title} meta={task.dueAt ? `Due ${new Date(task.dueAt).toLocaleString()}` : "No due date"} action={<><button onClick={async () => setData(await window.assistant.tasks.toggleComplete(task.id))}><CheckCircle2 size={15} /></button><button onClick={async () => setData(await window.assistant.tasks.delete(task.id))}><Trash2 size={15} /></button></>} />)} {!tasks.length && <Empty text="No tasks yet. Ask the assistant to create one or add one here." />}</Panel>
       <Panel title="Upcoming Events">{events.map((event) => <Row key={event.id} title={event.title} meta={eventDateLabel(event)} action={<><button onClick={() => window.assistant.calendar.openGoogle(event)}><CalendarDays size={15} /></button><button onClick={async () => setData(await window.assistant.calendar.delete(event.id))}><Trash2 size={15} /></button></>} />)} {!events.length && <Empty text="No upcoming events yet." />}</Panel>
     </div>
+    <Panel title="Reminder Mirror">
+      {reminders.map((reminder) => <Row key={reminder.id} title={reminderTitle(reminder)} meta={reminderDueLabel(reminder)} action={<button onClick={() => window.assistant.calendar.openGoogle(plannerEventFromReminder(reminder))}><CalendarDays size={15} /></button>} />)}
+      {!reminders.length && <Empty text="Saved reminders appear here automatically and can be sent to Google Calendar." />}
+    </Panel>
     <div className="columns">
       <Panel title="Google Calendar How-To">
         <Row title="1. Create the event here" meta="Add the title, time, notes, and location in Planner." />
@@ -2113,7 +2145,7 @@ function SettingsView({ data, setData }: { data: AppData; setData: (data: AppDat
         <div className="form">
           <label><input type="checkbox" checked={settings.home.compact} onChange={(e) => setSettings({ ...settings, home: { ...settings.home, compact: e.target.checked } })} /> Compact Home mode</label>
           <label><input type="checkbox" checked={settings.home.showTodayRail} onChange={(e) => setSettings({ ...settings, home: { ...settings.home, showTodayRail: e.target.checked } })} /> Show Today rail</label>
-          {Object.entries(settings.home.widgets).map(([key, value]) => <label key={key}><input type="checkbox" checked={Boolean(value)} onChange={(e) => setSettings({ ...settings, home: { ...settings.home, widgets: { ...settings.home.widgets, [key]: e.target.checked } } })} /> {key}</label>)}
+          {Object.entries(settings.home.widgets).filter(([key]) => key !== "codex").map(([key, value]) => <label key={key}><input type="checkbox" checked={Boolean(value)} onChange={(e) => setSettings({ ...settings, home: { ...settings.home, widgets: { ...settings.home.widgets, [key]: e.target.checked } } })} /> {key}</label>)}
           <button onClick={save}><Save size={16} /> Save Home settings</button>
         </div>
       </Panel>
@@ -2126,13 +2158,10 @@ function SettingsView({ data, setData }: { data: AppData; setData: (data: AppDat
           <button onClick={save}><Save size={16} /> Save privacy</button>
         </div>
       </Panel>
-      <Panel title="Codex & Workspaces">
+      <Panel title="Workspaces">
         <div className="form">
           <input value={settings.defaultWorkingDirectory} onChange={(e) => setSettings({ ...settings, defaultWorkingDirectory: e.target.value })} placeholder="Selected workspace, e.g. E:\\Projects\\My App" />
-          <input value={settings.codexExecutablePath} onChange={(e) => setSettings({ ...settings, codexExecutablePath: e.target.value })} placeholder="Codex executable path" />
           <button onClick={async () => setData(await window.assistant.projects.select())}><FolderOpen size={16} /> Select workspace folder</button>
-          <button onClick={async () => setData(await window.assistant.tools.detectCodex())}>Detect Codex from PATH</button>
-          <button onClick={async () => setData(await window.assistant.tools.selectCodex())}>Select Codex executable</button>
           <button onClick={save}><Save size={16} /> Save paths</button>
         </div>
       </Panel>
